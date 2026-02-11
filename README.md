@@ -17,7 +17,7 @@ A program egy virtuális múzeumtermet jelenít meg, ahol a felhasználó:
 
 ---
 
-## ✅ Specification (beadható, konkrét leírás)
+## ✅ Specification
 
 **Projekt: “Virtual Gallery – Interactive Museum Room”**
 
@@ -42,7 +42,7 @@ A kezelési útmutató **F1** megnyomására jelenik meg a képernyőn.
 
 ---
 
-## 📌 Jelenlegi állapot (a beadott ZIP alapján)
+## 📌 Jelenlegi állapot
 
 **Már működik:**
 - ✅ FPS kamera: **WASD + egér**, valamint **Q/E** fel/le mozgás
