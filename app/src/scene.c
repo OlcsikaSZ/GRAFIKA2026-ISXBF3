@@ -9,8 +9,16 @@
 #include <direct.h>
 
 // Z-up világ: X=bal/jobb, Y=előre/hátra, Z=felfelé (összhangban camera.c-vel)
-static void draw_textured_quad_centered_xy(float w, float h, float u_repeat, float v_repeat);
-static void draw_room(GLuint floor_tex, GLuint wall_tex);
+// A korábbi verzió falait forgatásokkal rajzoltuk. Az gyakorlatban néha "lyukas szobát"
+// eredményezett (egyes falak a kamera szögétől függően eltűntek / belógtak).
+// Itt direkt világ-koordinátás quadokat rajzolunk: így determinisztikus, mindig zárt szoba.
+static void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex);
+
+// DEBUG rajzok (tengely + kis háromszög) — alapból kikapcsoljuk.
+// Ha kell, fordításkor add hozzá: -DSHOW_DEBUG_AXES
+#ifdef SHOW_DEBUG_AXES
+static void draw_debug_axes_and_marker(void);
+#endif
 
 static void apply_transform(const Entity* e)
 {
@@ -25,21 +33,23 @@ static void apply_transform(const Entity* e)
 
 static void set_lighting_with_intensity(float intensity)
 {
-    float ambient_light[]  = { 0.5f * intensity, 0.5f * intensity, 0.5f * intensity, 1.0f };
-    float diffuse_light[]  = { 1.0f * intensity, 1.0f * intensity, 1.0f * intensity, 1.0f };
-    float specular_light[] = { 1.0f * intensity, 1.0f * intensity, 1.0f * intensity, 1.0f };
+    // Stabil, "múzeum" jellegű világítás: egy pontfény felülről + erősebb ambient.
+    // Az előző verzió spotlámpát próbált használni, de rossz paraméterrel (GL_POSITION kétszer),
+    // ami erősen irányfüggő sötétedést okozott.
+    float ambient_light[]  = { 0.35f * intensity, 0.35f * intensity, 0.35f * intensity, 1.0f };
+    float diffuse_light[]  = { 0.85f * intensity, 0.85f * intensity, 0.85f * intensity, 1.0f };
+    float specular_light[] = { 0.25f * intensity, 0.25f * intensity, 0.25f * intensity, 1.0f };
 
     glLightfv(GL_LIGHT0, GL_AMBIENT,  ambient_light);
     glLightfv(GL_LIGHT0, GL_DIFFUSE,  diffuse_light);
     glLightfv(GL_LIGHT0, GL_SPECULAR, specular_light);
 
-    float position[] = { 0.0f, 3.0f, 2.0f, 1.0f };
+    // Pontfény a plafon közelében, középen.
+    float position[] = { 0.0f, 0.0f, 3.8f, 1.0f };
     glLightfv(GL_LIGHT0, GL_POSITION, position);
 
-    float direction[] = { 0.2f, -1.0f, -0.2f, 0.0f }; // w=0 -> directional
-    glLightfv(GL_LIGHT0, GL_POSITION, direction);
-    glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 35.0f);
-    glLightf(GL_LIGHT0, GL_SPOT_EXPONENT, 10.0f);
+    // Kapcsoljuk ki a spot módot (180° = nem spot).
+    glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 180.0f);
 }
 
 static void set_material(const Material* material)
@@ -95,7 +105,8 @@ void init_scene(Scene* scene)
     scene->material.shininess = 100.0;
 
     scene->floor_tex = load_texture("assets/textures/floor.jpg");
-    scene->wall_tex  = load_texture("assets/textures/wall.jpg");
+    scene->wall_tex  = load_texture("assets/textures/wall.png");
+    scene->ceiling_tex = load_texture("assets/textures/ceiling.png");
     scene->painting_tex = load_texture("assets/textures/painting1.jpg");
 }
 
@@ -180,22 +191,15 @@ void render_scene(const Scene* scene)
     set_material(&scene->material);
     set_lighting_with_intensity(scene->light_intensity);
 
-    draw_origin();
-
-    glDisable(GL_LIGHTING);
-    glDisable(GL_TEXTURE_2D);
-
-    glBegin(GL_TRIANGLES);
-    glColor3f(1,0,0); glVertex3f(0,0,-2);
-    glColor3f(0,1,0); glVertex3f(1,0,-2);
-    glColor3f(0,0,1); glVertex3f(0,1,-2);
-    glEnd();
+#ifdef SHOW_DEBUG_AXES
+    draw_debug_axes_and_marker();
+#endif
 
     glEnable(GL_LIGHTING);
     glEnable(GL_TEXTURE_2D);
     glColor3f(1,1,1);
 
-    draw_room(scene->floor_tex, scene->wall_tex);
+    draw_room_world_quads(scene->floor_tex, scene->wall_tex, scene->ceiling_tex);
 
     // KÉP 1 a hátsó falon (Y = -6 környéke), kicsit a fal elé tolva
     glBindTexture(GL_TEXTURE_2D, scene->painting_tex);
@@ -205,7 +209,14 @@ void render_scene(const Scene* scene)
     glTranslatef(0.0f, -5.95f, 1.6f);
     glRotatef(90.0f, 1, 0, 0);       // XY -> XZ
     glRotatef(180.0f, 0, 0, 1);      // normál +Y felé
-    draw_textured_quad_centered_xy(3.0f, 2.0f, 1.0f, 1.0f);
+    // egyszerű képkvád
+    glBegin(GL_QUADS);
+    glNormal3f(0, 0, 1);
+    glTexCoord2f(0, 0); glVertex3f(-1.5f, -1.0f, 0);
+    glTexCoord2f(1, 0); glVertex3f( 1.5f, -1.0f, 0);
+    glTexCoord2f(1, 1); glVertex3f( 1.5f,  1.0f, 0);
+    glTexCoord2f(0, 1); glVertex3f(-1.5f,  1.0f, 0);
+    glEnd();
     glPopMatrix();
 
     // padló (később textúrázzuk)
@@ -272,68 +283,105 @@ void draw_plane(int n)
     }
 }
 
-static void draw_textured_quad_centered_xy(float w, float h, float u_repeat, float v_repeat)
+static void quad_world(float x1, float y1, float z1,
+                       float x2, float y2, float z2,
+                       float x3, float y3, float z3,
+                       float x4, float y4, float z4,
+                       float nx, float ny, float nz,
+                       float u_rep, float v_rep)
 {
     glBegin(GL_QUADS);
-    glNormal3f(0, 0, 1);
+    glNormal3f(nx, ny, nz);
 
-    glTexCoord2f(0, 0);               glVertex3f(-w/2, -h/2, 0);
-    glTexCoord2f(u_repeat, 0);        glVertex3f( w/2, -h/2, 0);
-    glTexCoord2f(u_repeat, v_repeat); glVertex3f( w/2,  h/2, 0);
-    glTexCoord2f(0, v_repeat);        glVertex3f(-w/2,  h/2, 0);
-
+    glTexCoord2f(0.0f, 0.0f);    glVertex3f(x1, y1, z1);
+    glTexCoord2f(u_rep, 0.0f);   glVertex3f(x2, y2, z2);
+    glTexCoord2f(u_rep, v_rep);  glVertex3f(x3, y3, z3);
+    glTexCoord2f(0.0f, v_rep);   glVertex3f(x4, y4, z4);
     glEnd();
 }
 
-static void draw_room(GLuint floor_tex, GLuint wall_tex)
+static void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex)
 {
-    // Z-up szoba paraméterek
     const float room_w = 12.0f;
     const float room_h = 4.0f;
     const float half   = room_w * 0.5f;
 
-    glPushMatrix();
-
-    // PADLÓ: XY sík, Z=0
+    // PADLÓ
     glBindTexture(GL_TEXTURE_2D, floor_tex);
-    glPushMatrix();
-    glTranslatef(0.0f, 0.0f, 0.0f);
-    draw_textured_quad_centered_xy(room_w, room_w, 8.0f, 8.0f);
-    glPopMatrix();
+    quad_world(-half, -half, 0.0f,
+               +half, -half, 0.0f,
+               +half, +half, 0.0f,
+               -half, +half, 0.0f,
+               0.0f, 0.0f, 1.0f,
+               8.0f, 8.0f);
 
-    // FAL TEXTÚRA
+    // PLAFON (normál lefelé)
+    glBindTexture(GL_TEXTURE_2D, ceiling_tex);
+    quad_world(-half, -half, room_h,
+               -half, +half, room_h,
+               +half, +half, room_h,
+               +half, -half, room_h,
+               0.0f, 0.0f, -1.0f,
+               8.0f, 8.0f);
+
+    // FALAK
     glBindTexture(GL_TEXTURE_2D, wall_tex);
 
-    // HÁTSÓ FAL (Y = -half), befelé +Y
-    glPushMatrix();
-    glTranslatef(0.0f, -half, room_h * 0.5f);
-    glRotatef(90.0f, 1, 0, 0);       // XY -> XZ (normál -Y)
-    glRotatef(180.0f, 0, 0, 1);      // normál +Y
-    draw_textured_quad_centered_xy(room_w, room_h, 1.0f, 1.0f);
-    glPopMatrix();
+    // HÁTSÓ (Y=-half) normál +Y
+    quad_world(-half, -half, 0.0f,
+               +half, -half, 0.0f,
+               +half, -half, room_h,
+               -half, -half, room_h,
+               0.0f, 1.0f, 0.0f,
+               1.0f, 1.0f);
 
-    // ELSŐ FAL (Y = +half), befelé -Y
-    glPushMatrix();
-    glTranslatef(0.0f, half, room_h * 0.5f);
-    glRotatef(90.0f, 1, 0, 0);       // normál -Y
-    draw_textured_quad_centered_xy(room_w, room_h, 1.0f, 1.0f);
-    glPopMatrix();
+    // ELSŐ (Y=+half) normál -Y
+    quad_world(-half, +half, 0.0f,
+               -half, +half, room_h,
+               +half, +half, room_h,
+               +half, +half, 0.0f,
+               0.0f, -1.0f, 0.0f,
+               1.0f, 1.0f);
 
-    // BAL FAL (X = -half), befelé +X
-    glPushMatrix();
-    glTranslatef(-half, 0.0f, room_h * 0.5f);
-    glRotatef(90.0f, 1, 0, 0);       // XY -> XZ
-    glRotatef(-90.0f, 0, 0, 1);      // XZ -> YZ, normál +X
-    draw_textured_quad_centered_xy(room_w, room_h, 1.0f, 1.0f);
-    glPopMatrix();
+    // BAL (X=-half) normál +X
+    quad_world(-half, -half, 0.0f,
+               -half, -half, room_h,
+               -half, +half, room_h,
+               -half, +half, 0.0f,
+               1.0f, 0.0f, 0.0f,
+               1.0f, 1.0f);
 
-    // JOBB FAL (X = +half), befelé -X
-    glPushMatrix();
-    glTranslatef(half, 0.0f, room_h * 0.5f);
-    glRotatef(90.0f, 1, 0, 0);
-    glRotatef(90.0f, 0, 0, 1);       // normál -X
-    draw_textured_quad_centered_xy(room_w, room_h, 1.0f, 1.0f);
-    glPopMatrix();
-
-    glPopMatrix();
+    // JOBB (X=+half) normál -X
+    quad_world(+half, -half, 0.0f,
+               +half, +half, 0.0f,
+               +half, +half, room_h,
+               +half, -half, room_h,
+               -1.0f, 0.0f, 0.0f,
+               1.0f, 1.0f);
 }
+
+#ifdef SHOW_DEBUG_AXES
+static void draw_debug_axes_and_marker(void)
+{
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+
+    // Tengelyek (0,0,0)-ból
+    glBegin(GL_LINES);
+    glColor3f(1, 0, 0); glVertex3f(0, 0, 0); glVertex3f(1, 0, 0);
+    glColor3f(0, 1, 0); glVertex3f(0, 0, 0); glVertex3f(0, 1, 0);
+    glColor3f(0, 0, 1); glVertex3f(0, 0, 0); glVertex3f(0, 0, 1);
+    glEnd();
+
+    // Kis marker háromszög (debug)
+    glBegin(GL_TRIANGLES);
+    glColor3f(1,0,0); glVertex3f(0,0,-2);
+    glColor3f(0,1,0); glVertex3f(1,0,-2);
+    glColor3f(0,0,1); glVertex3f(0,1,-2);
+    glEnd();
+
+    glColor3f(1,1,1);
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_LIGHTING);
+}
+#endif
