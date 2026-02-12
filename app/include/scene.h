@@ -38,6 +38,7 @@ typedef struct Scene
 
     GLuint floor_tex;
     GLuint wall_tex;
+    GLuint ceiling_tex;
     GLuint painting_tex;
 
 } Scene;
