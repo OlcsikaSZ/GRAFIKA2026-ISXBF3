@@ -19,6 +19,15 @@ typedef struct App
     double uptime;
     Camera camera;
     Scene scene;
+
+    /* Letterboxed viewport (for correct mouse picking) */
+    int viewport_x;
+    int viewport_y;
+    int viewport_w;
+    int viewport_h;
+
+    int window_w;
+    int window_h;
 } App;
 
 /**
@@ -31,10 +40,10 @@ void init_app(App* app, int width, int height);
  */
 void init_opengl();
 
-/**
- * Reshape the window.
+/*
+ * Window resize handling is implemented as an internal (static) helper in
+ * src/app.c. It is not part of the public app interface.
  */
-void reshape(GLsizei width, GLsizei height);
 
 /**
  * Handle the events of the application.
