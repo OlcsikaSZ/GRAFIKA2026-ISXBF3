@@ -1,9 +1,176 @@
 #include "utils.h"
 
+#include <string.h>
+
+#include <GL/gl.h>
+
 #include <math.h>
 
 double degree_to_radian(double degree)
 {
 	return degree * M_PI / 180.0;
+}
+
+// Simple 5x7 font (rows in lower 5 bits)
+static const unsigned char font_5x7[][7] = {
+        /* space */ {0,0,0,0,0,0,0},
+        /* 0 */ {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E},
+        /* 1 */ {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E},
+        /* 2 */ {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F},
+        /* 3 */ {0x1F,0x02,0x04,0x02,0x01,0x11,0x0E},
+        /* 4 */ {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02},
+        /* 5 */ {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E},
+        /* 6 */ {0x06,0x08,0x10,0x1E,0x11,0x11,0x0E},
+        /* 7 */ {0x1F,0x01,0x02,0x04,0x08,0x08,0x08},
+        /* 8 */ {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E},
+        /* 9 */ {0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C},
+        /* a */ {0x00,0x00,0x0E,0x01,0x0F,0x11,0x0F},
+        /* b */ {0x10,0x10,0x1E,0x11,0x11,0x11,0x1E},
+        /* c */ {0x00,0x00,0x0E,0x11,0x10,0x11,0x0E},
+        /* d */ {0x01,0x01,0x0F,0x11,0x11,0x11,0x0F},
+        /* e */ {0x00,0x00,0x0E,0x11,0x1F,0x10,0x0E},
+        /* f */ {0x06,0x08,0x1E,0x08,0x08,0x08,0x08},
+        /* g */ {0x00,0x00,0x0F,0x11,0x0F,0x01,0x0E},
+        /* h */ {0x10,0x10,0x1E,0x11,0x11,0x11,0x11},
+        /* i */ {0x04,0x00,0x0C,0x04,0x04,0x04,0x0E},
+        /* j */ {0x02,0x00,0x06,0x02,0x02,0x12,0x0C},
+        /* k */ {0x10,0x10,0x12,0x14,0x18,0x14,0x12},
+        /* l */ {0x0C,0x04,0x04,0x04,0x04,0x04,0x0E},
+        /* m */ {0x00,0x00,0x1A,0x15,0x15,0x15,0x15},
+        /* n */ {0x00,0x00,0x1E,0x11,0x11,0x11,0x11},
+        /* o */ {0x00,0x00,0x0E,0x11,0x11,0x11,0x0E},
+        /* p */ {0x00,0x00,0x1E,0x11,0x1E,0x10,0x10},
+        /* q */ {0x00,0x00,0x0F,0x11,0x0F,0x01,0x01},
+        /* r */ {0x00,0x00,0x16,0x19,0x10,0x10,0x10},
+        /* s */ {0x00,0x00,0x0F,0x10,0x0E,0x01,0x1E},
+        /* t */ {0x08,0x08,0x1E,0x08,0x08,0x08,0x06},
+        /* u */ {0x00,0x00,0x11,0x11,0x11,0x11,0x0F},
+        /* v */ {0x00,0x00,0x11,0x11,0x11,0x0A,0x04},
+        /* w */ {0x00,0x00,0x11,0x11,0x15,0x15,0x0A},
+        /* x */ {0x00,0x00,0x11,0x0A,0x04,0x0A,0x11},
+        /* y */ {0x00,0x00,0x11,0x11,0x0F,0x01,0x0E},
+        /* z */ {0x00,0x00,0x1F,0x02,0x04,0x08,0x1F},
+        /* : */ {0x00,0x04,0x00,0x00,0x00,0x04,0x00},
+        /* # */ {0x0A,0x0A,0x1F,0x0A,0x1F,0x0A,0x0A},
+        /* ( */ {0x02,0x04,0x08,0x08,0x08,0x04,0x02},
+        /* ) */ {0x08,0x04,0x02,0x02,0x02,0x04,0x08},
+        /* - */ {0x00,0x00,0x00,0x1F,0x00,0x00,0x00},
+};
+
+static const unsigned char* glyph_for_5x7(char c)
+{
+    if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+    if (c == ' ') return font_5x7[0];
+    if (c >= '0' && c <= '9') return font_5x7[1 + (c - '0')];
+    if (c >= 'a' && c <= 'z') return font_5x7[11 + (c - 'a')];
+    switch (c) {
+    case ':': return font_5x7[11 + 26];
+    case '#': return font_5x7[11 + 27];
+    case '(': return font_5x7[11 + 28];
+    case ')': return font_5x7[11 + 29];
+    case '-': return font_5x7[11 + 30];
+    default:  return font_5x7[0];
+    }
+}
+
+void draw_text_2d(int window_w, int window_h, int x_px, int y_px, const char* text)
+{
+    if (text == NULL || text[0] == '\0') return;
+
+    // Tiny pixel font rendered with GL_POINTS (robust across drivers).
+    // Input coordinates are top-left pixels (like UI), so we convert them.
+    // UI size knob: 1 = small, 2 = medium, 3 = large
+    const int SCALE = 2;
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, window_w, 0, window_h, -1, 1);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glColor4f(1.f, 1.f, 1.f, 1.f);
+    glPointSize((GLfloat)SCALE);
+
+    int x = x_px;
+    int y = window_h - y_px - (7 * SCALE);
+
+    glBegin(GL_POINTS);
+    for (const char* p = text; *p; ++p) {
+        if (*p == '\n') {
+            x = x_px;
+            y -= 9 * SCALE;
+            continue;
+        }
+        const unsigned char* g = glyph_for_5x7(*p);
+        for (int row = 0; row < 7; ++row) {
+            for (int col = 0; col < 5; ++col) {
+                if ((g[row] >> (4 - col)) & 1) {
+                    glVertex2i(x + col * SCALE, y + (6 - row) * SCALE);
+                }
+            }
+        }
+        x += 6 * SCALE;
+    }
+    glEnd();
+
+    glPointSize(1.f);
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+}
+
+void draw_filled_rect_2d(int window_w, int window_h,
+                         int x_px, int y_px, int w_px, int h_px,
+                         float r, float g, float b, float a)
+{
+    // input coords from top-left
+    int x0 = x_px;
+    int y0 = window_h - y_px - h_px;
+    int x1 = x0 + w_px;
+    int y1 = y0 + h_px;
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, window_w, 0, window_h, -1, 1);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(r, g, b, a);
+
+    glBegin(GL_QUADS);
+    glVertex2i(x0, y0);
+    glVertex2i(x1, y0);
+    glVertex2i(x1, y1);
+    glVertex2i(x0, y1);
+    glEnd();
+
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
 }
 
