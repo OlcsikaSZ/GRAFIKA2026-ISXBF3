@@ -1,1 +1,9 @@
 type,model,texture,px,py,pz,rx,ry,rz,sx,sy,sz
+painting,assets/models/plane.obj,assets/textures/painting1.jpg,0.0,-5.95,1.55,-90,0,180,1.5,0.8,1.0
+painting,assets/models/plane.obj,assets/textures/painting2.jpg,0.0,5.95,1.55,90,0,0,1.5,0.8,1.0
+painting,assets/models/plane.obj,assets/textures/painting3.jpg,-5.95,-2.0,1.55,0,90,90,1.5,0.8,1.0
+painting,assets/models/plane.obj,assets/textures/painting4.jpg,-5.95,2.0,1.55,0,90,90,1.5,0.8,1.0
+painting,assets/models/plane.obj,assets/textures/painting5.jpg,5.95,0.0,1.55,0,-90,-90,1.5,0.8,1.0
+
+pedestal,assets/models/pedestal.obj,assets/textures/marble.jpg,0.0,0.0,0.32,0,0,0,0.65,0.65,0.65
+statue,assets/models/statue.obj,assets/textures/marble.jpg,0.0,0.0,0.72,0,0,0,0.55,0.55,0.55
