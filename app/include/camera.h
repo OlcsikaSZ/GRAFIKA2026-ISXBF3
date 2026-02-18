@@ -14,6 +14,12 @@ typedef struct Camera
     vec3 rotation;
     vec3 speed;
     bool is_preview_visible;
+
+    // "Walking" hatás (fej-bólogatás) – opcionális, külön állapotban tároljuk,
+    // hogy az ütközés/klamp a valódi pozícióval számoljon.
+    bool walk_bob_enabled;
+    double walk_phase;
+    double bob_offset;   // aktuális függőleges offset
 } Camera;
 
 /**
@@ -50,6 +56,11 @@ void set_camera_side_speed(Camera* camera, double speed);
  * Set the speed of up and down steps.
  */
 void set_camera_vertical_speed(Camera* camera, double speed);
+
+/**
+ * Toggle walking head-bob effect.
+ */
+void toggle_walk_bob(Camera* camera);
 
 void show_texture_preview(void);
 
