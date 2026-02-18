@@ -1,8 +1,12 @@
 #include "app.h"
 #include "help.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <SDL2/SDL_image.h>
+
+static void reshape(App* app, GLsizei width, GLsizei height);
 
 void init_app(App* app, int width, int height)
 {
@@ -16,6 +20,9 @@ void init_app(App* app, int width, int height)
         printf("[ERROR] SDL initialization error: %s\n", SDL_GetError());
         return;
     }
+
+    /* Request a stencil buffer for stencil-outline highlighting. */
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
     app->window = SDL_CreateWindow(
         "Virtual Gallery – Interactive Museum Room",
@@ -48,7 +55,7 @@ void init_app(App* app, int width, int height)
     }
 
     init_opengl();
-    reshape(width, height);
+    reshape(app, width, height);
 
     init_camera(&(app->camera));
     init_scene(&(app->scene));
@@ -96,7 +103,7 @@ void init_opengl()
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 }
 
-void reshape(GLsizei width, GLsizei height)
+static void reshape(App* app, GLsizei width, GLsizei height)
 {
     int x, y, w, h;
     double ratio;
@@ -116,19 +123,32 @@ void reshape(GLsizei width, GLsizei height)
     }
 
     glViewport(x, y, w, h);
+    if (app) {
+        app->viewport_x = x;
+        app->viewport_y = y;
+        app->viewport_w = w;
+        app->viewport_h = h;
+        app->window_w = width;
+        app->window_h = height;
+    }
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glFrustum(
-        -.08, .08,
-        -.06, .06,
-        .1, 200.0
-    );
+    {
+        // Szűkebb FOV 'ember módban' (természetesebb arányok), szélesebb 'fly' módban.
+        const double human = app && app->camera.walk_bob_enabled;
+        const double half_w = human ? 0.060 : 0.080;
+        const double half_h = human ? 0.045 : 0.060;
+        glFrustum(-half_w, half_w, -half_h, half_h, .1, 200.0);
+    }
 }
 
 void handle_app_events(App* app)
 {
     SDL_Event event;
-    static bool is_mouse_down = false;
+    static bool is_mouse_down = false; // right button (mouse-look)
+    static bool left_down = false;
+    static int left_down_x = 0;
+    static int left_down_y = 0;
     static int mouse_x = 0;
     static int mouse_y = 0;
     int x;
@@ -177,6 +197,8 @@ void handle_app_events(App* app)
                 toggle_walk_bob(&(app->camera));
                 // kapcsoláskor biztosan állítsuk le a vertikális mozgást
                 set_camera_vertical_speed(&(app->camera), 0);
+                // FOV frissítés (ember mód szűkebb)
+                reshape(app, app->window_w, app->window_h);
                 break;
             case SDL_SCANCODE_KP_PLUS:
                 change_light(&(app->scene), 0.1f);
@@ -207,7 +229,14 @@ void handle_app_events(App* app)
             }
             break;
         case SDL_MOUSEBUTTONDOWN:
-            is_mouse_down = true;
+            if (event.button.button == SDL_BUTTON_RIGHT) {
+                is_mouse_down = true;
+            }
+            if (event.button.button == SDL_BUTTON_LEFT) {
+                left_down = true;
+                left_down_x = event.button.x;
+                left_down_y = event.button.y;
+            }
             break;
         case SDL_MOUSEMOTION:
             SDL_GetMouseState(&x, &y);
@@ -218,7 +247,35 @@ void handle_app_events(App* app)
             mouse_y = y;
             break;
         case SDL_MOUSEBUTTONUP:
-            is_mouse_down = false;
+            if (event.button.button == SDL_BUTTON_RIGHT) {
+                is_mouse_down = false;
+            }
+            if (event.button.button == SDL_BUTTON_LEFT && left_down) {
+                left_down = false;
+                const int dx = abs(event.button.x - left_down_x);
+                const int dy = abs(event.button.y - left_down_y);
+                if (dx + dy <= 3) {
+                    const int idx = pick_entity(
+                        &app->scene, &app->camera,
+                        event.button.x, event.button.y,
+                        app->viewport_x, app->viewport_y, app->viewport_w, app->viewport_h);
+
+                    // Convenience: clicking the statue toggles animation
+                    if (idx >= 0 && strcmp(app->scene.entities[idx].type, "statue") == 0) {
+                        toggle_animation(&(app->scene));
+                    }
+
+                    // Also reflect selection in the window title (handy + obvious for demo).
+                    if (idx >= 0) {
+                        char title[128];
+                        snprintf(title, sizeof(title), "Virtual Gallery – Interactive Museum Room | Selected: %s (#%d)",
+                                 app->scene.entities[idx].type, idx);
+                        SDL_SetWindowTitle(app->window, title);
+                    } else {
+                        SDL_SetWindowTitle(app->window, "Virtual Gallery – Interactive Museum Room");
+                    }
+                }
+            }
             break;
         case SDL_QUIT:
             app->is_running = false;
@@ -247,7 +304,7 @@ void render_app(App* app)
     int w = 0, h = 0;
     SDL_GetWindowSize(app->window, &w, &h);
 
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     glMatrixMode(GL_MODELVIEW);
 
     glPushMatrix();
@@ -263,6 +320,29 @@ void render_app(App* app)
         int w = 0, h = 0;
         SDL_GetWindowSize(app->window, &w, &h);
         draw_help_overlay(w, h);
+    }
+
+    // Picking info panel (bottom-left). Make it readable + a bit more helpful.
+    {
+        int ww = 0, hh = 0;
+        SDL_GetWindowSize(app->window, &ww, &hh);
+
+        const int panel_x = 12;
+        const int panel_y = hh - 72;   // top-left style
+        const int panel_w = 340;
+        const int panel_h = 58;
+
+        draw_filled_rect_2d(ww, hh, panel_x, panel_y, panel_w, panel_h, 0.f, 0.f, 0.f, 0.45f);
+
+        if (app->scene.selected_entity >= 0 && app->scene.selected_entity < app->scene.entity_count) {
+            const Entity* e = &app->scene.entities[app->scene.selected_entity];
+            char buf[256];
+            snprintf(buf, sizeof(buf), "Selected: %s (#%d)\nLMB pick | T anim (statue)",
+                     e->type, app->scene.selected_entity);
+            draw_text_2d(ww, hh, panel_x + 10, panel_y + 10, buf);
+        } else {
+            draw_text_2d(ww, hh, panel_x + 10, panel_y + 10, "Click to pick\nObjects will highlight");
+        }
     }
 
     SDL_GL_SwapWindow(app->window);
