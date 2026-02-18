@@ -26,6 +26,10 @@ typedef struct Entity
     // Animáció állapot (fok). Azért tároljuk külön, hogy pause/resume után
     // ugyanonnan folytassa, és ne ugorjon "időből számolt" szögre.
     float anim_angle_deg;
+
+    /* Local-space bounding sphere for picking */
+    vec3 bounds_center_local;
+    float bounds_radius_local;
 } Entity;
 
 typedef struct Scene
@@ -48,6 +52,9 @@ typedef struct Scene
     GLuint ceiling_tex;
     // Festmények is Entity-ként jönnek a scene.csv-ből.
 
+    /* Picking */
+    int selected_entity;
+
 } Scene;
 
 void init_scene(Scene* scene);
@@ -62,6 +69,11 @@ void render_scene(const Scene* scene);
 
 // Egyszerű animáció kapcsoló (pl. statue forgás)
 void toggle_animation(Scene* scene);
+
+/* Returns picked entity index, or -1 if none. Also sets scene->selected_entity. */
+int pick_entity(Scene* scene, const Camera* camera,
+                int mouse_x, int mouse_y,
+                int viewport_x, int viewport_y, int viewport_w, int viewport_h);
 
 void draw_origin(void);
 void draw_plane(int n);
