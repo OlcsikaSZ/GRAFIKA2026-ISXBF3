@@ -1,92 +1,109 @@
-# 🏛️ Virtual Gallery – Interactive Museum Room
+# Virtual Gallery – Interactive Museum Room
 
-**C / OpenGL / SDL2** alapú 3D “mini-múzeum”: bejárható terem first-person kamerával, fájlból betöltött OBJ modellekkel, állítható megvilágítással és időalapú animációval.
+**C / OpenGL / SDL2** alapú 3D “mini-múzeum”: bejárható terem first-person kamerával, OBJ modellekkel, textúrázással, állítható megvilágítással, időalapú animációval, valamint egérrel kijelöléssel (picking) és stencil outline kiemeléssel.
 
-A projekt célja egy **interaktív múzeumszoba** megvalósítása, ahol több grafikai funkció egyszerre jelenik meg (kamera, modellek, fények, animáció, scene betöltés), és erre építve plusz effektek (picking, ütközés, köd, textúrázás).
+A projekt célja egy interaktív múzeumszoba megvalósítása, ahol több grafikai funkció egyszerre jelenik meg (kamera, modellek, fények, animáció, scene betöltés), és erre építve plusz effektek (picking, korlátozás/ütközés, köd, kiemelés).
 
 ---
 
-## ✨ Röviden
+## Röviden
 
 A program egy virtuális múzeumtermet jelenít meg, ahol a felhasználó:
-- **WASD + egér** vezérléssel bejárhatja a teret (FPS kamera),
-- több **külső fájlból betöltött OBJ modell** látható (scene.csv alapján),
-- van **időalapú animáció** (a `type=statue` objektum folyamatosan forog),
-- van **megvilágítás**, aminek intenzitása futás közben állítható (**numpad + / -**),
-- a padló/terem alap geometriája is megjelenik (plane).
+- WASD + egér vezérléssel mozog (FPS kamera),
+- külső OBJ modelleket jelenít meg (scene.csv alapján),
+- textúrázott fal/padló/képek és modellek láthatók (SDL2_image),
+- van időalapú animáció (szobor forgása kapcsolható),
+- van állítható megvilágítás (Numpad + / -),
+- egérkattintással lehet kijelölni objektumokat (picking),
+- a kijelölt objektum stencil outline kiemelést kap,
+- megjelenik egy info panel a kijelölésről,
+- van “Human mode” (emberi szemmagasság + járás-szerű mozgás), kapcsolható.
 
 ---
 
-## ✅ Specification
+## Specification
 
-**Projekt: “Virtual Gallery – Interactive Museum Room”**
+Projekt: “Virtual Gallery – Interactive Museum Room”
 
-**Leírás:**  
-A program egy bejárható, virtuális múzeumtermet jelenít meg. A felhasználó egérrel és billentyűzettel mozog a térben (first-person kamera). A teremben több, fájlból betöltött 3D modell található (szobrok, vitrin, pad, oszlopok), valamint a falakon textúrázott “képek” láthatók. A megvilágítás több fényforrásból áll (pl. fő mennyezeti fény + spot a kiemelt tárgyra), amelyek intenzitása futás közben állítható.  
-A program interaktív: a felhasználó kijelölhet tárgyakat, mozgatni/forgatni tudja őket, és bizonyos elemek animáltak (pl. lassan forgó kiemelt szobor, nyíló ajtó, pulzáló spotfény).  
-A kezelési útmutató **F1** megnyomására jelenik meg a képernyőn.
+Leírás:  
+A program egy bejárható, virtuális múzeumtermet jelenít meg. A felhasználó egérrel és billentyűzettel mozog a térben (first-person kamera). A teremben több, fájlból betöltött 3D modell található, valamint textúrázott felületek (fal/padló és képek). A megvilágítás intenzitása futás közben állítható.  
+A program interaktív: a felhasználó egérrel kijelölhet objektumokat (picking), a kijelölt elem stencil outline kiemelést kap, és a képernyőn megjelenik egy rövid info panel a kijelölésről.  
+A mozgás két módban használható: szabad repülés és ember mód (szemmagasság + “walk” mozgás).
 
-**Kötelező elemek:**
+Kötelező elemek:
 - Kamera bejárás: egér + WASD
 - Modellek: külső fájlból (OBJ)
-- Animáció: időalapú forgás/ajtó animáció
-- Textúrák: falak/képek és modellek textúrázása
-- Fények: +/- intenzitás állítás
-- F1: súgó overlay
+- Animáció: időalapú forgás (szobor)
+- Textúrák: fal/padló/képek + modellek textúrázása (SDL2_image)
+- Fények: intenzitás állítás
+- F1: súgó overlay / segítség
 
-**Tervezett plusz funkciók (min. 3):**
-- Egérrel kijelölés (picking) + kijelölt tárgy kiemelése (outline vagy színváltás)
-- Ütközésvizsgálat (AABB): falakon, tárgyakon nem lehet átsétálni
-- Köd (fog) állítható paraméterrel (F2/F3)  
-  (+ opcionális: átlátszó vitrin, egyszerű árnyék)
-
----
-
-## 📌 Jelenlegi állapot
-
-**Már működik:**
-- ✅ FPS kamera: **WASD + egér**, valamint **Q/E** fel/le mozgás
-- ✅ OBJ modellek betöltése külső fájlból (`ext/obj` loader)
-- ✅ Scene betöltés CSV-ből: `assets/config/scene.csv`
-- ✅ Időalapú animáció: `type=statue` objektum **folyamatosan forog**
-- ✅ Megvilágítás + intenzitás állítás: **Numpad + / Numpad -**
-- ✅ Padló kirajzolva (plane)
-
-**Előkészítve / részben kész:**
-- 🟡 Textúrázás: van `texture.c` (SDL_image), és a scene-ben már szerepel a texture mező, de jelenleg a render még nem köti be minden modellre (`texture_id` alapértelmezésben 0).
-
-**Tervezett (még nincs bekötve ebben a verzióban):**
-- ❌ F1 help overlay a képernyőn (jelenleg debug jellegű)
-- ❌ Picking + kiemelés
-- ❌ AABB ütközés
-- ❌ Köd (fog)
+Plusz funkciók (min. 3):
+- Picking (egérkattintás) + kijelölés kiemelése (stencil outline)
+- Human mode (szemmagasság + “walk” jellegű mozgás)
+- Térkorlátozás / clamp (ne lehessen a padlón/plafonon “átmenni”)
+- (később bővíthető: AABB ütközés tárgyakkal, fog, shadow)
 
 ---
 
-## 🎮 Irányítás (Controls)
+## Jelenlegi állapot
 
-**Mozgás / kamera:**
-- `W` / `S` – előre / hátra
-- `A` / `D` – balra / jobbra
-- `Q` / `E` – fel / le (vertikális mozgás)
-- `Mouse` – körbenézés (kamera forgatás)
-
-**Fény:**
-- `Numpad +` – fényintenzitás növelése
-- `Numpad -` – fényintenzitás csökkentése
-
-**Egyéb:**
-- `ESC` – kilépés
-- `F1` – jelenleg debug jelzés (később: help overlay)
+Már működik:
+- FPS kamera: WASD + egér
+- Szabad repülés: Q/E fel/le mozgás
+- Human mode (emberi szemmagasság + járás): B kapcsoló
+- Terem korlátozás / clamp: padlón és plafonon nem lehet átmenni
+- OBJ betöltés külső fájlból (ext/obj loader)
+- Scene betöltés CSV-ből: assets/config/scene.csv
+- Textúrázás SDL2_image-vel (fal/padló/képek/modellek)
+- Időalapú animáció: szobor forgása (kijelöléssel kapcsolható)
+- Megvilágítás + intenzitás állítás: Numpad + / Numpad -
+- Picking (egérrel kijelölés)
+- Kijelölt objektum kiemelése: stencil outline
+- Info panel: kijelölt objektum neve / rövid segítség a képernyőn
+- F1: help / controls overlay megjelenítése
 
 ---
 
-## 🗂️ Mappaszerkezet
+## Tervezett (következő nagy modulok)
+
+- Árnyék (shadow): egyszerű megoldás (pl. blob shadow / planar)
+- AABB ütközés tárgyakkal (ne csak fal/terem clamp legyen)
+- Köd (fog) paraméterezve
+
+---
+
+## Irányítás (Controls)
+
+Mozgás / kamera:
+- W / S – előre / hátra
+- A / D – balra / jobbra
+- Mouse – körbenézés (kamera forgatás)
+- Q / E – fel / le (szabad repülésben)
+
+Módváltás:
+- B – Human mode (emberi szemmagasság + walk mozgás) be/ki
+
+Interakció:
+- Left Click – picking (kijelölés)
+  - kijelöléskor: stencil outline kiemelés + info panel
+  - szobor kijelölésekor: animáció (forgás) kapcsolható
+
+Fény:
+- Numpad + – fényintenzitás növelése
+- Numpad - – fényintenzitás csökkentése
+
+Egyéb:
+- F1 – súgó / controls overlay
+- ESC – kilépés
+
+---
+
+## Mappaszerkezet
 
 ```
 app/
   Makefile
-  museum.exe
   src/
     app.c
     camera.c
@@ -102,9 +119,9 @@ app/
     config/
       scene.csv
     models/
-      duck.obj
+      (OBJ modellek)
     textures/
-      duck.jpg
+      (fal/padló/képek/modellek textúrái)
   ext/
     obj/
       include/obj/...
@@ -115,69 +132,56 @@ demos/
 
 ---
 
-## 🧩 Scene konfiguráció (scene.csv)
+## Scene konfiguráció (scene.csv)
 
 A jelenlegi terem tartalma itt van definiálva:
-- `app/assets/config/scene.csv`
+- app/assets/config/scene.csv
 
-**Formátum:**
-- `type,model,texture,px,py,pz,rx,ry,rz,sx,sy,sz`
-
-**Példa sor:**
-- `statue,assets/models/duck.obj,assets/textures/duck.jpg,0,0,-3,0,0,0,1,1,1`
+Formátum:
+- type,model,texture,px,py,pz,rx,ry,rz,sx,sy,sz
 
 Megjegyzés:
-- `type=statue` → automatikusan **animált** (forgás).
-- A `texture` mező már jelen van, a textúra-bekötés jelenleg fejlesztés alatt.
+- type=statue → animálható (forgás)
+- A texture mező alapján történik a textúrázás
 
 ---
 
-## 🏗️ Fordítás és futtatás
+## Fordítás és futtatás
 
-### Windows (MinGW + SDL2 / kurzus SDK)
+Windows (MinGW + SDL2 / kurzus SDK)
 
-Lépj be az `app/` mappába, majd fordíts:
-
+Fordítás (app/ mappában):
 ```bash
 make
 ```
 
 Futtatás:
-
 ```bash
 ./museum.exe
 ```
 
 Takarítás:
-
 ```bash
 make clean
 ```
 
-Megjegyzés: A projekt a kurzusos/SDK-s környezethez igazodik. Ha a fordításhoz külön `.bat` vagy SDK shell kell, azt a beadandó környezet szerint kell indítani.
+Megjegyzés: A projekt a kurzus SDK-s környezethez igazodik (SDL2 + SDL2_image).
 
 ---
 
-## 🧠 Technikai áttekintés (röviden)
+## Technikai áttekintés (röviden)
 
-- **Kamera:** `src/camera.c` kezeli a first-person mozgást és a nézetet.
-- **Scene betöltés:** `src/csv.c` beolvassa a `scene.csv`-t, `src/scene.c` létrehozza az entity-ket.
-- **OBJ betöltés/rajzolás:** `ext/obj` modul (OBJ loader + draw).
-- **Animáció:** időalapú frissítés a scene update-ben (statue forgás).
-- **Lighting:** OpenGL fixed pipeline fény, intenzitás szorzóval állítható.
-
----
-
-## 🚀 Tervezett bővítések (plusz funkciók)
-
-A “múzeum” jelleghez és a grafikai követelményekhez illő következő lépések:
-- 🎯 Picking + kiemelés (objektum kijelölése egérrel)
-- 🧱 AABB ütközés (ne lehessen falon/tárgyon átmenni)
-- 🌫️ Köd (fog) paraméterezve (F2/F3)
-- 🖼️ Textúrák teljes bekötése (modellek és fal-képek)
+- Kamera / mozgás: src/camera.c
+- Scene betöltés: src/csv.c + src/scene.c
+- OBJ betöltés/rajzolás: ext/obj
+- Textúrázás: src/texture.c (SDL2_image)
+- Animáció: időalapú frissítés (szobor forgás)
+- Picking: egérkattintás → kijelölt entity
+- Kiemelés: stencil buffer alapú outline
+- Overlay / help / info panel: src/help.c (és kapcsolódó modulok)
 
 ---
 
-## 👤 Szerző
+## Szerző
 
-Készítette: **Gál Olivér István (ISXBF3)**
+Készítette: Gál Olivér István (ISXBF3)
