@@ -88,6 +88,7 @@ void init_scene(Scene* scene)
     scene->entity_count = 0;
     scene->light_intensity = 1.0f;
     scene->time_sec = 0.0;
+    scene->animation_enabled = 1;
 
     // anyag (maradhat MVP-ben közös mindenkire)
     scene->material.ambient.red = 0.0f;
@@ -105,9 +106,16 @@ void init_scene(Scene* scene)
     scene->material.shininess = 100.0;
 
     scene->floor_tex = load_texture("assets/textures/floor.jpg");
-    scene->wall_tex  = load_texture("assets/textures/wall.png");
-    scene->ceiling_tex = load_texture("assets/textures/ceiling.png");
-    scene->painting_tex = load_texture("assets/textures/painting1.jpg");
+    // Use JPG textures to avoid libpng DLL issues on some MinGW/SDL2_image setups.
+    scene->wall_tex  = load_texture("assets/textures/wall.jpg");
+    scene->ceiling_tex = load_texture("assets/textures/ceiling.jpg");
+    // Festmények már a scene.csv-ből jönnek (plane.obj + painting*.jpg)
+}
+
+void toggle_animation(Scene* scene)
+{
+    scene->animation_enabled = !scene->animation_enabled;
+    printf("Animation: %s\n", scene->animation_enabled ? "ON" : "OFF");
 }
 
 void destroy_scene(Scene* scene)
@@ -163,6 +171,7 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
         e->sx = rows[i].sx; e->sy = rows[i].sy; e->sz = rows[i].sz;
 
         e->animated = (strcmp(e->type, "statue") == 0);
+        e->anim_angle_deg = e->ry;
 
         load_model(&e->model, rows[i].model);
 
@@ -178,10 +187,16 @@ void update_scene(Scene* scene, double elapsed_time)
     scene->time_sec += elapsed_time;
 
     // időalapú anim: statue forog
-    for (int i = 0; i < scene->entity_count; i++) {
-        Entity* e = &scene->entities[i];
-        if (e->animated) {
-            e->ry = (float)(scene->time_sec * 20.0); // 20 deg/sec
+    if (scene->animation_enabled) {
+        for (int i = 0; i < scene->entity_count; i++) {
+            Entity* e = &scene->entities[i];
+            if (e->animated) {
+                e->anim_angle_deg += (float)(elapsed_time * 20.0); // 20 deg/sec
+                // wrap
+                if (e->anim_angle_deg > 360.0f) e->anim_angle_deg -= 360.0f;
+                if (e->anim_angle_deg < 0.0f)   e->anim_angle_deg += 360.0f;
+                e->ry = e->anim_angle_deg;
+            }
         }
     }
 }
@@ -201,30 +216,7 @@ void render_scene(const Scene* scene)
 
     draw_room_world_quads(scene->floor_tex, scene->wall_tex, scene->ceiling_tex);
 
-    // KÉP 1 a hátsó falon (Y = -6 környéke), kicsit a fal elé tolva
-    glBindTexture(GL_TEXTURE_2D, scene->painting_tex);
-    glColor3f(1.0f, 1.0f, 1.0f);
-    glPushMatrix();
-    // Hátsó fal síkja: X-Z, befelé +Y. A kép legyen ~1.5m magasan, középen.
-    glTranslatef(0.0f, -5.95f, 1.6f);
-    glRotatef(90.0f, 1, 0, 0);       // XY -> XZ
-    glRotatef(180.0f, 0, 0, 1);      // normál +Y felé
-    // egyszerű képkvád
-    glBegin(GL_QUADS);
-    glNormal3f(0, 0, 1);
-    glTexCoord2f(0, 0); glVertex3f(-1.5f, -1.0f, 0);
-    glTexCoord2f(1, 0); glVertex3f( 1.5f, -1.0f, 0);
-    glTexCoord2f(1, 1); glVertex3f( 1.5f,  1.0f, 0);
-    glTexCoord2f(0, 1); glVertex3f(-1.5f,  1.0f, 0);
-    glEnd();
-    glPopMatrix();
-
-    // padló (később textúrázzuk)
-    /*glPushMatrix();
-    glTranslatef(-5.0f, -1.0f, -5.0f);
-    glScalef(10.0f, 10.0f, 1.0f);
-    draw_plane(50);
-    glPopMatrix();*/
+    // Festmények és tárgyak mind Entity-ként érkeznek a scene.csv-ből.
 
     // entity-k
     for (int i = 0; i < scene->entity_count; i++) {
