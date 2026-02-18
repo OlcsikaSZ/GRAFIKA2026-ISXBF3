@@ -22,6 +22,10 @@ typedef struct Entity
     float sx, sy, sz;
 
     int animated; // 1 = forog
+
+    // Animáció állapot (fok). Azért tároljuk külön, hogy pause/resume után
+    // ugyanonnan folytassa, és ne ugorjon "időből számolt" szögre.
+    float anim_angle_deg;
 } Entity;
 
 typedef struct Scene
@@ -36,10 +40,13 @@ typedef struct Scene
     // idő alapú animhoz: eltelt idő (összegzett)
     double time_sec;
 
+    // Animáció kapcsoló (pl. szobor forgatás indítás/megállítás)
+    int animation_enabled;
+
     GLuint floor_tex;
     GLuint wall_tex;
     GLuint ceiling_tex;
-    GLuint painting_tex;
+    // Festmények is Entity-ként jönnek a scene.csv-ből.
 
 } Scene;
 
@@ -52,6 +59,9 @@ void change_light(Scene* scene, float delta);
 
 void update_scene(Scene* scene, double elapsed_time);
 void render_scene(const Scene* scene);
+
+// Egyszerű animáció kapcsoló (pl. statue forgás)
+void toggle_animation(Scene* scene);
 
 void draw_origin(void);
 void draw_plane(int n);
