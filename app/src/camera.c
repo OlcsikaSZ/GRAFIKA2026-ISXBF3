@@ -9,7 +9,7 @@ void init_camera(Camera* camera)
     camera->position.x = 0.0;
     camera->position.y = 0.0;
     // Kényelmes "szemmagasság" Z-up világban
-    camera->position.z = 1.65;
+    camera->position.z = 1.70;
     camera->rotation.x = 0.0;
     camera->rotation.y = 0.0;
     camera->rotation.z = 0.0;
@@ -27,6 +27,12 @@ void init_camera(Camera* camera)
 void toggle_walk_bob(Camera* camera)
 {
     camera->walk_bob_enabled = !camera->walk_bob_enabled;
+    // 'Ember mód': állítsuk be a szemmagasságot, és onnantól ne engedjünk repülni.
+    if (camera->walk_bob_enabled) {
+        const double eye = 1.75;
+        camera->position.z = eye;
+        camera->speed.z = 0.0;
+    }
     camera->walk_phase = 0.0;
     camera->bob_offset = 0.0;
 }
@@ -35,6 +41,8 @@ void toggle_walk_bob(Camera* camera)
 // Fontos: ez a scene.c-ben rajzolt szoba méreteivel van összhangban.
 static void clamp_to_room(Camera* camera)
 {
+    // A scene.c-ben rajzolt szoba mérete: room_half (felezett szélesség / hossz).
+    // Itt ezt ugyanúgy kell tartani, különben "kirepülünk" a falakon.
     const double room_half = 6.0;   // room_w = 12.0 -> fele
     const double wall_pad  = 0.25;  // ennyire maradjunk a faltól, hogy ne vágjon a near plane
     const double min_x = -room_half + wall_pad;
@@ -48,9 +56,9 @@ static void clamp_to_room(Camera* camera)
     if (camera->position.y > max_y) camera->position.y = max_y;
 
     // Ne essünk a padló alá, és ne menjünk bele a plafonba.
-    // "Séta" módban (head-bob ON) ne tudjunk repülni / túl alacsonyra menni.
-    // Fly módban maradhat a lazább clamp.
-    const double floor_z_min = camera->walk_bob_enabled ? 1.20 : 0.20;
+    // Fontos: fly módban SE tudjunk átrepülni a padlón/plafonon.
+    // "Ember" módban a padló minimuma magasabb (szemmagasság-érzet).
+    const double floor_z_min = camera->walk_bob_enabled ? 1.55 : 0.25;
     const double ceil_z_max  = 4.0 - 0.30; // hagyjunk elég helyet a near-plane miatt (ne vágja le a plafont)
 
     if (camera->position.z < floor_z_min) camera->position.z = floor_z_min;
@@ -82,8 +90,8 @@ void update_camera(Camera* camera, double time)
         const double move_mag = fabs(camera->speed.x) + fabs(camera->speed.y);
         if (move_mag > 0.001) {
             // freki a mozgással arányos (kellemesebb érzet)
-            const double freq = 8.0;      // rad/sec
-            const double amp  = 0.03;     // méter (finomabb)
+            const double freq = 6.0;      // rad/sec (kevésbé "ráz")
+            const double amp  = 0.010;    // méter
             camera->walk_phase += time * freq;
             camera->bob_offset = sin(camera->walk_phase) * amp;
         } else {
