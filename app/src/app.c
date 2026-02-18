@@ -1,4 +1,5 @@
 #include "app.h"
+#include "help.h"
 #include <stdio.h>
 
 #include <SDL2/SDL_image.h>
@@ -26,8 +27,16 @@ void init_app(App* app, int width, int height)
         return;
     }
 
-    inited_loaders = IMG_Init(IMG_INIT_PNG | IMG_INIT_JPG);
-    if ((inited_loaders & (IMG_INIT_PNG | IMG_INIT_JPG)) == 0) {
+    /*
+     * NOTE:
+     * SDL2_image is required for the assignment. However, initializing PNG
+     * support on some Windows/MinGW setups can trigger a startup error
+     * (inflateValidate / libpng16-16.dll) due to an outdated zlib/libpng pair
+     * found on PATH. Since this project uses JPEG textures, we only initialize
+     * JPG support here to avoid loading libpng at startup.
+     */
+    inited_loaders = IMG_Init(IMG_INIT_JPG);
+    if ((inited_loaders & IMG_INIT_JPG) == 0) {
         printf("[ERROR] IMG init error: %s\n", IMG_GetError());
         return;
     }
@@ -145,14 +154,29 @@ void handle_app_events(App* app)
                 set_camera_side_speed(&(app->camera), -1);
                 break;
             case SDL_SCANCODE_Q:
-                set_camera_vertical_speed(&(app->camera), 1);
+                // "Séta" módban ne lehessen repülni
+                if (!app->camera.walk_bob_enabled) {
+                    set_camera_vertical_speed(&(app->camera), 1);
+                }
                 break;
             case SDL_SCANCODE_E:
-                set_camera_vertical_speed(&(app->camera), -1);
+                // "Séta" módban ne lehessen repülni
+                if (!app->camera.walk_bob_enabled) {
+                    set_camera_vertical_speed(&(app->camera), -1);
+                }
                 break;
             case SDL_SCANCODE_F1:
-                // később: overlay. MVP: elég, hogy kiírjuk / vagy flaget állítunk.
-                printf("F1 pressed (help toggle)\n");
+                toggle_help();
+                break;
+            case SDL_SCANCODE_R:
+                // Statue forgás indítás/megállítás
+                toggle_animation(&(app->scene));
+                break;
+            case SDL_SCANCODE_B:
+                // Walking head-bob (járás érzet)
+                toggle_walk_bob(&(app->camera));
+                // kapcsoláskor biztosan állítsuk le a vertikális mozgást
+                set_camera_vertical_speed(&(app->camera), 0);
                 break;
             case SDL_SCANCODE_KP_PLUS:
                 change_light(&(app->scene), 0.1f);
@@ -220,6 +244,9 @@ void update_app(App* app)
 
 void render_app(App* app)
 {
+    int w = 0, h = 0;
+    SDL_GetWindowSize(app->window, &w, &h);
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glMatrixMode(GL_MODELVIEW);
 
@@ -230,6 +257,12 @@ void render_app(App* app)
 
     if (app->camera.is_preview_visible) {
         show_texture_preview();
+    }
+
+    if (is_help_visible()) {
+        int w = 0, h = 0;
+        SDL_GetWindowSize(app->window, &w, &h);
+        draw_help_overlay(w, h);
     }
 
     SDL_GL_SwapWindow(app->window);
