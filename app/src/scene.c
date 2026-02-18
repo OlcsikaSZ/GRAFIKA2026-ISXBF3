@@ -8,6 +8,45 @@
 #include <stdio.h>
 #include <direct.h>
 
+#include <math.h>
+
+static void compute_model_bounds_sphere(const Model* m, vec3* out_center, float* out_radius)
+{
+    if (!m || !m->vertices || m->n_vertices <= 0) {
+        out_center->x = out_center->y = out_center->z = 0.0f;
+        *out_radius = 1.0f;
+        return;
+    }
+
+    float minx = m->vertices[0].x, maxx = m->vertices[0].x;
+    float miny = m->vertices[0].y, maxy = m->vertices[0].y;
+    float minz = m->vertices[0].z, maxz = m->vertices[0].z;
+
+    for (int i = 1; i < m->n_vertices; i++) {
+        const float x = m->vertices[i].x;
+        const float y = m->vertices[i].y;
+        const float z = m->vertices[i].z;
+        if (x < minx) { minx = x; }
+        if (x > maxx) { maxx = x; }
+
+        if (y < miny) { miny = y; }
+        if (y > maxy) { maxy = y; }
+
+        if (z < minz) { minz = z; }
+        if (z > maxz) { maxz = z; }
+    }
+
+    out_center->x = (minx + maxx) * 0.5f;
+    out_center->y = (miny + maxy) * 0.5f;
+    out_center->z = (minz + maxz) * 0.5f;
+
+    const float dx = (maxx - minx);
+    const float dy = (maxy - miny);
+    const float dz = (maxz - minz);
+    *out_radius = 0.5f * sqrtf(dx*dx + dy*dy + dz*dz);
+    if (*out_radius < 0.001f) *out_radius = 0.001f;
+}
+
 // Z-up világ: X=bal/jobb, Y=előre/hátra, Z=felfelé (összhangban camera.c-vel)
 // A korábbi verzió falait forgatásokkal rajzoltuk. Az gyakorlatban néha "lyukas szobát"
 // eredményezett (egyes falak a kamera szögétől függően eltűntek / belógtak).
@@ -89,6 +128,7 @@ void init_scene(Scene* scene)
     scene->light_intensity = 1.0f;
     scene->time_sec = 0.0;
     scene->animation_enabled = 1;
+    scene->selected_entity = -1;
 
     // anyag (maradhat MVP-ben közös mindenkire)
     scene->material.ambient.red = 0.0f;
@@ -175,6 +215,8 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
 
         load_model(&e->model, rows[i].model);
 
+        compute_model_bounds_sphere(&e->model, &e->bounds_center_local, &e->bounds_radius_local);
+
         // textura
         e->texture_id = load_texture((char*)rows[i].texture);
 
@@ -214,28 +256,393 @@ void render_scene(const Scene* scene)
     glEnable(GL_TEXTURE_2D);
     glColor3f(1,1,1);
 
+    /* Stencil-outline highlight support */
+    glEnable(GL_STENCIL_TEST);
+    glClear(GL_STENCIL_BUFFER_BIT);
+    glStencilMask(0x00);                 /* default: don't write to stencil */
+    glStencilFunc(GL_ALWAYS, 0, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+
     draw_room_world_quads(scene->floor_tex, scene->wall_tex, scene->ceiling_tex);
 
     // Festmények és tárgyak mind Entity-ként érkeznek a scene.csv-ből.
 
     // entity-k
     for (int i = 0; i < scene->entity_count; i++) {
+        if (i == scene->selected_entity) continue;
         const Entity* e = &scene->entities[i];
 
         glPushMatrix();
         apply_transform(e);
-
-        // ha textúrázol:
-        glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, e->texture_id);
-        glColor3f(1.0f, 1.0f, 1.0f); // ne színezzük el
+        glColor3f(1.0f, 1.0f, 1.0f);
         draw_model((Model*)&e->model);
-        glDisable(GL_TEXTURE_2D);
-
-        //glDisable(GL_TEXTURE_2D);
-
         glPopMatrix();
     }
+
+    /* Draw selected normally + write stencil = 1 */
+    if (scene->selected_entity >= 0 && scene->selected_entity < scene->entity_count) {
+        const Entity* e = &scene->entities[scene->selected_entity];
+
+        glStencilMask(0xFF);
+        glStencilFunc(GL_ALWAYS, 1, 0xFF);
+        glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+
+        glPushMatrix();
+        apply_transform(e);
+        glBindTexture(GL_TEXTURE_2D, e->texture_id);
+        glColor3f(1.0f, 1.0f, 1.0f);
+        draw_model((Model*)&e->model);
+        glPopMatrix();
+
+        /* Outline pass: slightly scaled copy where stencil != 1 */
+        glStencilMask(0x00);
+        glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+        glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+
+        glDisable(GL_TEXTURE_2D);
+        glDisable(GL_LIGHTING);
+
+        glPushMatrix();
+        apply_transform(e);
+        glScalef(1.05f, 1.05f, 1.05f);
+        glColor3f(1.0f, 0.85f, 0.20f);
+        draw_model((Model*)&e->model);
+        glPopMatrix();
+
+        glEnable(GL_LIGHTING);
+        glEnable(GL_TEXTURE_2D);
+        glColor3f(1.0f, 1.0f, 1.0f);
+    }
+
+    glStencilMask(0xFF);
+    glDisable(GL_STENCIL_TEST);
+}
+
+// ---- Picking helpers ----
+
+static int invert_matrix_4x4(const double m[16], double inv_out[16])
+{
+    // Adapted from the classic GLU inversion snippet (public domain style).
+    double inv[16];
+
+    inv[0] = m[5]  * m[10] * m[15] -
+             m[5]  * m[11] * m[14] -
+             m[9]  * m[6]  * m[15] +
+             m[9]  * m[7]  * m[14] +
+             m[13] * m[6]  * m[11] -
+             m[13] * m[7]  * m[10];
+
+    inv[4] = -m[4]  * m[10] * m[15] +
+              m[4]  * m[11] * m[14] +
+              m[8]  * m[6]  * m[15] -
+              m[8]  * m[7]  * m[14] -
+              m[12] * m[6]  * m[11] +
+              m[12] * m[7]  * m[10];
+
+    inv[8] = m[4]  * m[9] * m[15] -
+             m[4]  * m[11] * m[13] -
+             m[8]  * m[5] * m[15] +
+             m[8]  * m[7] * m[13] +
+             m[12] * m[5] * m[11] -
+             m[12] * m[7] * m[9];
+
+    inv[12] = -m[4]  * m[9] * m[14] +
+               m[4]  * m[10] * m[13] +
+               m[8]  * m[5] * m[14] -
+               m[8]  * m[6] * m[13] -
+               m[12] * m[5] * m[10] +
+               m[12] * m[6] * m[9];
+
+    inv[1] = -m[1]  * m[10] * m[15] +
+              m[1]  * m[11] * m[14] +
+              m[9]  * m[2] * m[15] -
+              m[9]  * m[3] * m[14] -
+              m[13] * m[2] * m[11] +
+              m[13] * m[3] * m[10];
+
+    inv[5] = m[0]  * m[10] * m[15] -
+             m[0]  * m[11] * m[14] -
+             m[8]  * m[2] * m[15] +
+             m[8]  * m[3] * m[14] +
+             m[12] * m[2] * m[11] -
+             m[12] * m[3] * m[10];
+
+    inv[9] = -m[0]  * m[9] * m[15] +
+              m[0]  * m[11] * m[13] +
+              m[8]  * m[1] * m[15] -
+              m[8]  * m[3] * m[13] -
+              m[12] * m[1] * m[11] +
+              m[12] * m[3] * m[9];
+
+    inv[13] = m[0]  * m[9] * m[14] -
+              m[0]  * m[10] * m[13] -
+              m[8]  * m[1] * m[14] +
+              m[8]  * m[2] * m[13] +
+              m[12] * m[1] * m[10] -
+              m[12] * m[2] * m[9];
+
+    inv[2] = m[1]  * m[6] * m[15] -
+             m[1]  * m[7] * m[14] -
+             m[5]  * m[2] * m[15] +
+             m[5]  * m[3] * m[14] +
+             m[13] * m[2] * m[7] -
+             m[13] * m[3] * m[6];
+
+    inv[6] = -m[0]  * m[6] * m[15] +
+              m[0]  * m[7] * m[14] +
+              m[4]  * m[2] * m[15] -
+              m[4]  * m[3] * m[14] -
+              m[12] * m[2] * m[7] +
+              m[12] * m[3] * m[6];
+
+    inv[10] = m[0]  * m[5] * m[15] -
+              m[0]  * m[7] * m[13] -
+              m[4]  * m[1] * m[15] +
+              m[4]  * m[3] * m[13] +
+              m[12] * m[1] * m[7] -
+              m[12] * m[3] * m[5];
+
+    inv[14] = -m[0]  * m[5] * m[14] +
+               m[0]  * m[6] * m[13] +
+               m[4]  * m[1] * m[14] -
+               m[4]  * m[2] * m[13] -
+               m[12] * m[1] * m[6] +
+               m[12] * m[2] * m[5];
+
+    inv[3] = -m[1] * m[6] * m[11] +
+              m[1] * m[7] * m[10] +
+              m[5] * m[2] * m[11] -
+              m[5] * m[3] * m[10] -
+              m[9] * m[2] * m[7] +
+              m[9] * m[3] * m[6];
+
+    inv[7] = m[0] * m[6] * m[11] -
+             m[0] * m[7] * m[10] -
+             m[4] * m[2] * m[11] +
+             m[4] * m[3] * m[10] +
+             m[8] * m[2] * m[7] -
+             m[8] * m[3] * m[6];
+
+    inv[11] = -m[0] * m[5] * m[11] +
+               m[0] * m[7] * m[9] +
+               m[4] * m[1] * m[11] -
+               m[4] * m[3] * m[9] -
+               m[8] * m[1] * m[7] +
+               m[8] * m[3] * m[5];
+
+    inv[15] = m[0] * m[5] * m[10] -
+              m[0] * m[6] * m[9] -
+              m[4] * m[1] * m[10] +
+              m[4] * m[2] * m[9] +
+              m[8] * m[1] * m[6] -
+              m[8] * m[2] * m[5];
+
+    double det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+    if (fabs(det) < 1e-12) {
+        return 0;
+    }
+
+    det = 1.0 / det;
+    for (int i = 0; i < 16; i++) inv_out[i] = inv[i] * det;
+    return 1;
+}
+
+static void mult_mat4_vec4(const double m[16], const double v[4], double out[4])
+{
+    // Column-major OpenGL matrix
+    out[0] = m[0]*v[0] + m[4]*v[1] + m[8]*v[2]  + m[12]*v[3];
+    out[1] = m[1]*v[0] + m[5]*v[1] + m[9]*v[2]  + m[13]*v[3];
+    out[2] = m[2]*v[0] + m[6]*v[1] + m[10]*v[2] + m[14]*v[3];
+    out[3] = m[3]*v[0] + m[7]*v[1] + m[11]*v[2] + m[15]*v[3];
+}
+
+static void mult_mat4_mat4(const double a[16], const double b[16], double out[16])
+{
+    // out = a*b (column-major)
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            out[col*4 + row] =
+                a[0*4 + row] * b[col*4 + 0] +
+                a[1*4 + row] * b[col*4 + 1] +
+                a[2*4 + row] * b[col*4 + 2] +
+                a[3*4 + row] * b[col*4 + 3];
+        }
+    }
+}
+
+static void vec3_sub(const double a[3], const double b[3], double out[3])
+{
+    out[0] = a[0] - b[0];
+    out[1] = a[1] - b[1];
+    out[2] = a[2] - b[2];
+}
+
+static void vec3_norm(double v[3])
+{
+    const double len = sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+    if (len > 1e-12) { v[0] /= len; v[1] /= len; v[2] /= len; }
+}
+
+static void rotate_point_xyz_deg(double p[3], float rx, float ry, float rz)
+{
+    // Apply the same rotation order as apply_transform(): X then Y then Z
+    const double x0 = p[0], y0 = p[1], z0 = p[2];
+    double x = x0, y = y0, z = z0;
+
+    const double ax = degree_to_radian(rx);
+    const double ay = degree_to_radian(ry);
+    const double az = degree_to_radian(rz);
+
+    // X
+    {
+        const double cy = cos(ax), sy = sin(ax);
+        const double y1 = y*cy - z*sy;
+        const double z1 = y*sy + z*cy;
+        y = y1; z = z1;
+    }
+    // Y
+    {
+        const double cx = cos(ay), sx = sin(ay);
+        const double x1 = x*cx + z*sx;
+        const double z1 = -x*sx + z*cx;
+        x = x1; z = z1;
+    }
+    // Z
+    {
+        const double cz = cos(az), sz = sin(az);
+        const double x1 = x*cz - y*sz;
+        const double y1 = x*sz + y*cz;
+        x = x1; y = y1;
+    }
+
+    p[0] = x; p[1] = y; p[2] = z;
+}
+
+static int ray_sphere_intersect(const double ro[3], const double rd[3],
+                                const double c[3], double r,
+                                double* out_t)
+{
+    const double ocx = ro[0] - c[0];
+    const double ocy = ro[1] - c[1];
+    const double ocz = ro[2] - c[2];
+    const double b = ocx*rd[0] + ocy*rd[1] + ocz*rd[2];
+    const double cterm = ocx*ocx + ocy*ocy + ocz*ocz - r*r;
+    const double disc = b*b - cterm;
+    if (disc < 0.0) return 0;
+    const double s = sqrt(disc);
+    double t = -b - s;
+    if (t < 0.0) t = -b + s;
+    if (t < 0.0) return 0;
+    if (out_t) *out_t = t;
+    return 1;
+}
+
+int pick_entity(Scene* scene, const Camera* camera,
+                int mouse_x, int mouse_y,
+                int viewport_x, int viewport_y, int viewport_w, int viewport_h)
+{
+    if (!scene || !camera) return -1;
+    if (viewport_w <= 0 || viewport_h <= 0) return -1;
+
+    // Ignore clicks outside the viewport
+    if (mouse_x < viewport_x || mouse_x >= viewport_x + viewport_w ||
+        mouse_y < viewport_y || mouse_y >= viewport_y + viewport_h) {
+        scene->selected_entity = -1;
+        return -1;
+    }
+
+    // Recreate the same projection+view matrices used for rendering
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+
+    const double aspect = (double)viewport_w / (double)viewport_h;
+    const double n = 0.10;
+    const double f = 200.0;
+    const double t = 0.08;
+    const double b = -0.08;
+    const double r = t * aspect;
+    const double l = -r;
+    glFrustum(l, r, b, t, n, f);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    set_view(camera);
+
+    double proj[16], mv[16], mvp[16], inv_mvp[16];
+    glGetDoublev(GL_PROJECTION_MATRIX, proj);
+    glGetDoublev(GL_MODELVIEW_MATRIX, mv);
+    mult_mat4_mat4(proj, mv, mvp);
+    if (!invert_matrix_4x4(mvp, inv_mvp)) {
+        glPopMatrix();
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        return -1;
+    }
+
+    // NDC coordinates
+    const double x_ndc = (2.0 * (double)(mouse_x - viewport_x) / (double)viewport_w) - 1.0;
+    const double y_ndc = 1.0 - (2.0 * (double)(mouse_y - viewport_y) / (double)viewport_h);
+
+    double v_near[4] = { x_ndc, y_ndc, -1.0, 1.0 };
+    double v_far[4]  = { x_ndc, y_ndc,  1.0, 1.0 };
+
+    double w_near[4], w_far[4];
+    mult_mat4_vec4(inv_mvp, v_near, w_near);
+    mult_mat4_vec4(inv_mvp, v_far,  w_far);
+    if (fabs(w_near[3]) < 1e-12 || fabs(w_far[3]) < 1e-12) {
+        glPopMatrix();
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        return -1;
+    }
+
+    const double p0[3] = { w_near[0]/w_near[3], w_near[1]/w_near[3], w_near[2]/w_near[3] };
+    const double p1[3] = { w_far[0]/w_far[3],  w_far[1]/w_far[3],  w_far[2]/w_far[3] };
+
+    double ro[3] = { p0[0], p0[1], p0[2] };
+    double rd[3];
+    vec3_sub(p1, p0, rd);
+    vec3_norm(rd);
+
+    int best_i = -1;
+    double best_t = 1e30;
+
+    for (int i = 0; i < scene->entity_count; i++) {
+        const Entity* e = &scene->entities[i];
+
+        // world center = T + R * (S * local_center)
+        double c_local[3] = { e->bounds_center_local.x, e->bounds_center_local.y, e->bounds_center_local.z };
+        c_local[0] *= e->sx; c_local[1] *= e->sy; c_local[2] *= e->sz;
+        rotate_point_xyz_deg(c_local, e->rx, e->ry, e->rz);
+        const double c_world[3] = { c_local[0] + e->px, c_local[1] + e->py, c_local[2] + e->pz };
+
+        const double smax = fmax(fmax(fabs(e->sx), fabs(e->sy)), fabs(e->sz));
+        const double r_world = (double)e->bounds_radius_local * smax;
+
+        double t_hit;
+        if (ray_sphere_intersect(ro, rd, c_world, r_world, &t_hit)) {
+            if (t_hit < best_t) {
+                best_t = t_hit;
+                best_i = i;
+            }
+        }
+    }
+
+    scene->selected_entity = best_i;
+
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+
+    if (best_i >= 0) {
+        printf("[PICK] selected: #%d (%s)\n", best_i, scene->entities[best_i].type);
+    }
+    return best_i;
 }
 
 void draw_origin(void)
@@ -294,6 +701,7 @@ static void quad_world(float x1, float y1, float z1,
 
 static void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex)
 {
+    // Human-scale room (meters)
     const float room_w = 12.0f;
     const float room_h = 4.0f;
     const float half   = room_w * 0.5f;
@@ -305,7 +713,7 @@ static void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceil
                +half, +half, 0.0f,
                -half, +half, 0.0f,
                0.0f, 0.0f, 1.0f,
-               8.0f, 8.0f);
+               5.0f, 5.0f);
 
     // PLAFON (normál lefelé)
     glBindTexture(GL_TEXTURE_2D, ceiling_tex);
@@ -314,7 +722,7 @@ static void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceil
                +half, +half, room_h,
                +half, -half, room_h,
                0.0f, 0.0f, -1.0f,
-               8.0f, 8.0f);
+               5.0f, 5.0f);
 
     // FALAK
     glBindTexture(GL_TEXTURE_2D, wall_tex);
