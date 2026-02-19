@@ -192,6 +192,10 @@ void handle_app_events(App* app)
                 // Statue forgás indítás/megállítás
                 toggle_animation(&(app->scene));
                 break;
+            case SDL_SCANCODE_H:
+                // Shadows on/off
+                toggle_shadows(&(app->scene));
+                break;
             case SDL_SCANCODE_B:
                 // Walking head-bob (járás érzet)
                 toggle_walk_bob(&(app->camera));
@@ -201,9 +205,11 @@ void handle_app_events(App* app)
                 reshape(app, app->window_w, app->window_h);
                 break;
             case SDL_SCANCODE_KP_PLUS:
+            case SDL_SCANCODE_EQUALS: /* + on main keyboard (shift+=) */
                 change_light(&(app->scene), 0.1f);
                 break;
             case SDL_SCANCODE_KP_MINUS:
+            case SDL_SCANCODE_MINUS:  /* - on main keyboard */
                 change_light(&(app->scene), -0.1f);
                 break;
             default:
