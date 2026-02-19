@@ -70,21 +70,38 @@ static void apply_transform(const Entity* e)
     glScalef(e->sx, e->sy, e->sz);
 }
 
-static void set_lighting_with_intensity(float intensity)
+static void set_lighting_with_intensity(const Scene* scene)
 {
     // Stabil, "múzeum" jellegű világítás: egy pontfény felülről + erősebb ambient.
     // Az előző verzió spotlámpát próbált használni, de rossz paraméterrel (GL_POSITION kétszer),
     // ami erősen irányfüggő sötétedést okozott.
-    float ambient_light[]  = { 0.35f * intensity, 0.35f * intensity, 0.35f * intensity, 1.0f };
-    float diffuse_light[]  = { 0.85f * intensity, 0.85f * intensity, 0.85f * intensity, 1.0f };
+    // Ambient: keep some base so "0" intensity doesn't go full black,
+    // but still let the ceiling naturally stay darker (it mostly gets ambient only).
+    const float intensity = scene->light_intensity;
+    const float amb = 0.08f + 0.18f * intensity;
+    float ambient_light[]  = { amb, amb, amb, 1.0f };
+    float diffuse_light[]  = { 0.90f * intensity, 0.90f * intensity, 0.90f * intensity, 1.0f };
     float specular_light[] = { 0.25f * intensity, 0.25f * intensity, 0.25f * intensity, 1.0f };
 
     glLightfv(GL_LIGHT0, GL_AMBIENT,  ambient_light);
     glLightfv(GL_LIGHT0, GL_DIFFUSE,  diffuse_light);
     glLightfv(GL_LIGHT0, GL_SPECULAR, specular_light);
 
-    // Pontfény a plafon közelében, középen.
-    float position[] = { 0.0f, 0.0f, 3.8f, 1.0f };
+    // Pontfény: a lámpatestből jöjjön a fény.
+    // Ha van "lamp" entity a scene.csv-ben, ahhoz igazítjuk a fény pozícióját.
+    // (Ha nincs, fallback: plafon közelében, középen.)
+    float lx = 0.0f, ly = 0.0f, lz = 3.75f;
+    for (int i = 0; i < scene->entity_count; i++) {
+        const Entity* e = &scene->entities[i];
+        if (strcmp(e->type, "lamp") == 0) {
+            lx = e->px;
+            ly = e->py;
+            // Light should be a bit below the fixture.
+            lz = e->pz - 0.20f;
+            break;
+        }
+    }
+    float position[] = { lx, ly, lz, 1.0f };
     glLightfv(GL_LIGHT0, GL_POSITION, position);
 
     // Kapcsoljuk ki a spot módot (180° = nem spot).
@@ -129,6 +146,7 @@ void init_scene(Scene* scene)
     scene->time_sec = 0.0;
     scene->animation_enabled = 1;
     scene->selected_entity = -1;
+    scene->shadows_enabled = 1;
 
     // anyag (maradhat MVP-ben közös mindenkire)
     scene->material.ambient.red = 0.0f;
@@ -150,6 +168,165 @@ void init_scene(Scene* scene)
     scene->wall_tex  = load_texture("assets/textures/wall.jpg");
     scene->ceiling_tex = load_texture("assets/textures/ceiling.jpg");
     // Festmények már a scene.csv-ből jönnek (plane.obj + painting*.jpg)
+}
+
+void toggle_shadows(Scene* scene)
+{
+    scene->shadows_enabled = !scene->shadows_enabled;
+    printf("Shadows: %s\n", scene->shadows_enabled ? "ON" : "OFF");
+}
+
+static void build_shadow_matrix(float out[16], const float plane[4], const float light[4])
+{
+    // Classic planar shadow projection matrix.
+    // plane = [A,B,C,D] in world space (Ax+By+Cz+D=0)
+    // light = [x,y,z,w] in world space (w=1 point light, w=0 directional)
+    const float dot =
+        plane[0] * light[0] +
+        plane[1] * light[1] +
+        plane[2] * light[2] +
+        plane[3] * light[3];
+
+    out[0]  = dot - light[0] * plane[0];
+    out[4]  =     - light[0] * plane[1];
+    out[8]  =     - light[0] * plane[2];
+    out[12] =     - light[0] * plane[3];
+
+    out[1]  =     - light[1] * plane[0];
+    out[5]  = dot - light[1] * plane[1];
+    out[9]  =     - light[1] * plane[2];
+    out[13] =     - light[1] * plane[3];
+
+    out[2]  =     - light[2] * plane[0];
+    out[6]  =     - light[2] * plane[1];
+    out[10] = dot - light[2] * plane[2];
+    out[14] =     - light[2] * plane[3];
+
+    out[3]  =     - light[3] * plane[0];
+    out[7]  =     - light[3] * plane[1];
+    out[11] =     - light[3] * plane[2];
+    out[15] = dot - light[3] * plane[3];
+}
+
+static int entity_casts_shadow(const Entity* e)
+{
+    // Don't cast shadows for wall paintings/planes.
+    if (strcmp(e->type, "painting") == 0) return 0;
+    if (strcmp(e->type, "plane") == 0) return 0;
+    if (strcmp(e->type, "lamp") == 0) return 0;
+    // Everything else can cast.
+    return 1;
+}
+
+static void render_planar_shadows(const Scene* scene)
+{
+    // Keep the light position consistent with set_lighting_with_intensity().
+    float lx = 0.0f, ly = 0.0f, lz = 3.75f;
+    for (int i = 0; i < scene->entity_count; i++) {
+        const Entity* e = &scene->entities[i];
+        if (strcmp(e->type, "lamp") == 0) {
+            lx = e->px;
+            ly = e->py;
+            lz = e->pz - 0.20f;
+            break;
+        }
+    }
+    const float light_pos[4] = { lx, ly, lz, 1.0f };
+
+    // Room dims must match draw_room_world_quads().
+    const float room_w = 12.0f;
+    const float half   = room_w * 0.5f;
+
+    // If the light is "off", don't draw projected shadows.
+    if (scene->light_intensity <= 0.001f) {
+        return;
+    }
+
+    // Shadow strength SHOULD increase with intensity (simple, intuitive mapping).
+    // Map [0..3] -> [0..0.72].
+    float t = scene->light_intensity / 3.0f;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    const float alpha_base = 0.72f * t;
+
+    // Render dark, translucent projected geometry onto planes.
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT);
+
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Prevent z-fighting with receiver surfaces.
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(-2.0f, -2.0f);
+    glDepthMask(GL_FALSE);
+
+    // Helper macro: draw all caster entities projected with a given shadow matrix.
+    // We apply a tiny lift along the receiver normal to avoid flicker.
+#define DRAW_SHADOWS_ON_PLANE(_shadow_mat, _nx, _ny, _nz) \
+    do { \
+        for (int i = 0; i < scene->entity_count; i++) { \
+            const Entity* e = &scene->entities[i]; \
+            if (!entity_casts_shadow(e)) continue; \
+            float per_alpha = alpha_base; \
+            if (strcmp(e->type, "pedestal") == 0) { \
+                per_alpha *= 0.75f; \
+            } \
+            glColor4f(0.0f, 0.0f, 0.0f, per_alpha); \
+            glPushMatrix(); \
+            glMultMatrixf((_shadow_mat)); \
+            glTranslatef((_nx) * 0.0030f, (_ny) * 0.0030f, (_nz) * 0.0030f); \
+            apply_transform(e); \
+            draw_model((Model*)&e->model); \
+            glPopMatrix(); \
+        } \
+    } while (0)
+
+    // 1) FLOOR (z=0)
+    {
+        const float floor_plane[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
+        float shadow_mat[16];
+        build_shadow_matrix(shadow_mat, floor_plane, light_pos);
+        DRAW_SHADOWS_ON_PLANE(shadow_mat, 0.0f, 0.0f, 1.0f);
+    }
+
+    // 2) WALLS (planar projection onto each wall plane)
+    // Back wall: y = -half  =>  y + half = 0, normal +Y
+    {
+        const float plane[4] = { 0.0f, 1.0f, 0.0f, half };
+        float shadow_mat[16];
+        build_shadow_matrix(shadow_mat, plane, light_pos);
+        DRAW_SHADOWS_ON_PLANE(shadow_mat, 0.0f, 1.0f, 0.0f);
+    }
+    // Front wall: y = +half  =>  -y + half = 0, normal -Y
+    {
+        const float plane[4] = { 0.0f, -1.0f, 0.0f, half };
+        float shadow_mat[16];
+        build_shadow_matrix(shadow_mat, plane, light_pos);
+        DRAW_SHADOWS_ON_PLANE(shadow_mat, 0.0f, -1.0f, 0.0f);
+    }
+    // Left wall: x = -half  =>  x + half = 0, normal +X
+    {
+        const float plane[4] = { 1.0f, 0.0f, 0.0f, half };
+        float shadow_mat[16];
+        build_shadow_matrix(shadow_mat, plane, light_pos);
+        DRAW_SHADOWS_ON_PLANE(shadow_mat, 1.0f, 0.0f, 0.0f);
+    }
+    // Right wall: x = +half  =>  -x + half = 0, normal -X
+    {
+        const float plane[4] = { -1.0f, 0.0f, 0.0f, half };
+        float shadow_mat[16];
+        build_shadow_matrix(shadow_mat, plane, light_pos);
+        DRAW_SHADOWS_ON_PLANE(shadow_mat, -1.0f, 0.0f, 0.0f);
+    }
+
+#undef DRAW_SHADOWS_ON_PLANE
+
+    glDepthMask(GL_TRUE);
+    glPopAttrib();
+    glColor4f(1, 1, 1, 1);
 }
 
 void toggle_animation(Scene* scene)
@@ -246,7 +423,7 @@ void update_scene(Scene* scene, double elapsed_time)
 void render_scene(const Scene* scene)
 {
     set_material(&scene->material);
-    set_lighting_with_intensity(scene->light_intensity);
+    set_lighting_with_intensity(scene);
 
 #ifdef SHOW_DEBUG_AXES
     draw_debug_axes_and_marker();
@@ -264,6 +441,10 @@ void render_scene(const Scene* scene)
     glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
 
     draw_room_world_quads(scene->floor_tex, scene->wall_tex, scene->ceiling_tex);
+
+    if (scene->shadows_enabled) {
+        render_planar_shadows(scene);
+    }
 
     // Festmények és tárgyak mind Entity-ként érkeznek a scene.csv-ből.
 
