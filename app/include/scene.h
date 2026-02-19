@@ -55,6 +55,9 @@ typedef struct Scene
     /* Picking */
     int selected_entity;
 
+    /* Simple projected shadows */
+    int shadows_enabled;
+
 } Scene;
 
 void init_scene(Scene* scene);
@@ -69,6 +72,9 @@ void render_scene(const Scene* scene);
 
 // Egyszerű animáció kapcsoló (pl. statue forgás)
 void toggle_animation(Scene* scene);
+
+/* Toggle simple projected shadows (planar). */
+void toggle_shadows(Scene* scene);
 
 /* Returns picked entity index, or -1 if none. Also sets scene->selected_entity. */
 int pick_entity(Scene* scene, const Camera* camera,
