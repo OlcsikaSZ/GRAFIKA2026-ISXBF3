@@ -30,6 +30,12 @@ typedef struct Entity
     /* Local-space bounding sphere for picking */
     vec3 bounds_center_local;
     float bounds_radius_local;
+
+    /* Local-space AABB min Z (for auto-grounding statues) */
+    float bounds_min_z_local;
+
+    /* Extra world-space Z offset to place model base onto a surface (pedestal top). */
+    float ground_offset_z;
 } Entity;
 
 typedef struct Scene
