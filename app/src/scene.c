@@ -10,6 +10,10 @@
 
 #include <math.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 static void compute_model_bounds_sphere(const Model* m, vec3* out_center, float* out_radius)
 {
     if (!m || !m->vertices || m->n_vertices <= 0) {
@@ -47,11 +51,29 @@ static void compute_model_bounds_sphere(const Model* m, vec3* out_center, float*
     if (*out_radius < 0.001f) *out_radius = 0.001f;
 }
 
+static float compute_model_min_z(const Model* m)
+{
+    if (!m || !m->vertices || m->n_vertices <= 0) {
+        return 0.0f;
+    }
+    float minz = m->vertices[0].z;
+    for (int i = 1; i < m->n_vertices; i++) {
+        const float z = m->vertices[i].z;
+        if (z < minz) minz = z;
+    }
+    return minz;
+}
+
 // Z-up világ: X=bal/jobb, Y=előre/hátra, Z=felfelé (összhangban camera.c-vel)
 // A korábbi verzió falait forgatásokkal rajzoltuk. Az gyakorlatban néha "lyukas szobát"
 // eredményezett (egyes falak a kamera szögétől függően eltűntek / belógtak).
 // Itt direkt világ-koordinátás quadokat rajzolunk: így determinisztikus, mindig zárt szoba.
 static void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex);
+
+// "Corridor" room dimensions (must match camera.c clamp + shadow planes).
+#define ROOM_W 10.0f
+#define ROOM_L 26.0f
+#define ROOM_H 4.0f
 
 // DEBUG rajzok (tengely + kis háromszög) — alapból kikapcsoljuk.
 // Ha kell, fordításkor add hozzá: -DSHOW_DEBUG_AXES
@@ -61,13 +83,35 @@ static void draw_debug_axes_and_marker(void);
 
 static void apply_transform(const Entity* e)
 {
-    glTranslatef(e->px, e->py, e->pz);
+    // If the entity has auto-grounding enabled (e.g., imported statues),
+    // we add a per-entity Z offset so the model's local min-Z sits on the
+    // intended surface (pedestal top).
+    glTranslatef(e->px, e->py, e->pz + e->ground_offset_z);
 
     glRotatef(e->rx, 1, 0, 0);
     glRotatef(e->ry, 0, 1, 0);
     glRotatef(e->rz, 0, 0, 1);
 
     glScalef(e->sx, e->sy, e->sz);
+}
+
+static void draw_shadow_proxy_circle(const Entity* e)
+{
+    // Fast shadow proxy (triangle fan) to avoid drawing high-poly models
+    // multiple times in the shadow pass.
+    const int SEG = 24;
+    const float r = e->bounds_radius_local;
+    const float cx = e->bounds_center_local.x;
+    const float cy = e->bounds_center_local.y;
+    const float z  = e->bounds_min_z_local + 0.002f;
+
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex3f(cx, cy, z);
+    for (int i = 0; i <= SEG; i++) {
+        const float a = (float)i * (2.0f * (float)M_PI / (float)SEG);
+        glVertex3f(cx + cosf(a) * r, cy + sinf(a) * r, z);
+    }
+    glEnd();
 }
 
 static void set_lighting_with_intensity(const Scene* scene)
@@ -77,35 +121,82 @@ static void set_lighting_with_intensity(const Scene* scene)
     // ami erősen irányfüggő sötétedést okozott.
     // Ambient: keep some base so "0" intensity doesn't go full black,
     // but still let the ceiling naturally stay darker (it mostly gets ambient only).
+    // IMPORTANT: in fixed pipeline, light components are clamped to [0..1].
+    // If diffuse/specular go above 1.0, everything saturates and you feel "no change".
+    // So we normalize the UI intensity [0..3] -> [0..1] for the actual OpenGL light.
     const float intensity = scene->light_intensity;
-    const float amb = 0.08f + 0.18f * intensity;
+    float t = intensity / 3.0f;
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+
+    // Base ambient: keep the scene readable even at 0 intensity,
+    // but still let the light slider matter.
+    const float amb = 0.12f + 0.18f * t;
     float ambient_light[]  = { amb, amb, amb, 1.0f };
-    float diffuse_light[]  = { 0.90f * intensity, 0.90f * intensity, 0.90f * intensity, 1.0f };
-    float specular_light[] = { 0.25f * intensity, 0.25f * intensity, 0.25f * intensity, 1.0f };
 
-    glLightfv(GL_LIGHT0, GL_AMBIENT,  ambient_light);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE,  diffuse_light);
-    glLightfv(GL_LIGHT0, GL_SPECULAR, specular_light);
+    // Diffuse stays below 1.0 to avoid saturation ("0.9 fölött nincs különbség").
+    const float d = 0.95f * t;
+    float diffuse_light[]  = { d, d, d, 1.0f };
 
-    // Pontfény: a lámpatestből jöjjön a fény.
-    // Ha van "lamp" entity a scene.csv-ben, ahhoz igazítjuk a fény pozícióját.
-    // (Ha nincs, fallback: plafon közelében, középen.)
-    float lx = 0.0f, ly = 0.0f, lz = 3.75f;
-    for (int i = 0; i < scene->entity_count; i++) {
+    const float s = 0.25f * t;
+    float specular_light[] = { s, s, s, 1.0f };
+
+    // Global ambient to avoid the "everything is black" look in a corridor.
+    // This is separate from per-light ambient.
+    {
+        const float g = 0.12f + 0.10f * t;
+        float globalAmb[] = { g, g, g, 1.0f };
+        glLightModelfv(GL_LIGHT_MODEL_AMBIENT, globalAmb);
+    }
+
+    // Multi-light corridor setup: use up to 3 ceiling fixtures.
+    // (Still fixed pipeline, so we stay within GL_LIGHT0..GL_LIGHT2.)
+    float lamp_pos[3][4];
+    int lamp_count = 0;
+    for (int i = 0; i < scene->entity_count && lamp_count < 3; i++) {
         const Entity* e = &scene->entities[i];
         if (strcmp(e->type, "lamp") == 0) {
-            lx = e->px;
-            ly = e->py;
-            // Light should be a bit below the fixture.
-            lz = e->pz - 0.20f;
-            break;
+            lamp_pos[lamp_count][0] = e->px;
+            lamp_pos[lamp_count][1] = e->py;
+            lamp_pos[lamp_count][2] = e->pz - 0.20f;
+            lamp_pos[lamp_count][3] = 1.0f;
+            lamp_count++;
         }
     }
-    float position[] = { lx, ly, lz, 1.0f };
-    glLightfv(GL_LIGHT0, GL_POSITION, position);
+    if (lamp_count == 0) {
+        lamp_pos[0][0] = 0.0f;
+        lamp_pos[0][1] = 0.0f;
+        lamp_pos[0][2] = (ROOM_H - 0.25f);
+        lamp_pos[0][3] = 1.0f;
+        lamp_count = 1;
+    }
 
-    // Kapcsoljuk ki a spot módot (180° = nem spot).
-    glLightf(GL_LIGHT0, GL_SPOT_CUTOFF, 180.0f);
+    // Helper: configure one OpenGL light.
+    static const GLenum lights[3] = { GL_LIGHT0, GL_LIGHT1, GL_LIGHT2 };
+    // Point light setup (stable in fixed pipeline): no spotlight cone.
+// focus
+
+    for (int li = 0; li < 3; li++) {
+        const GLenum L = lights[li];
+        if (li < lamp_count) {
+            glEnable(L);
+            glLightfv(L, GL_AMBIENT,  ambient_light);
+            glLightfv(L, GL_DIFFUSE,  diffuse_light);
+            glLightfv(L, GL_SPECULAR, specular_light);
+            glLightfv(L, GL_POSITION, lamp_pos[li]);
+
+            // --- POINT LIGHT (stable), no spotlight cone ---
+            glLightf(L, GL_SPOT_CUTOFF, 180.0f);
+            glLightf(L, GL_SPOT_EXPONENT, 0.0f);
+
+            // Attenuation tuned for corridor scale (avoid "no light" and avoid hard saturation)
+            glLightf(L, GL_CONSTANT_ATTENUATION,  0.8f);
+            glLightf(L, GL_LINEAR_ATTENUATION,    0.02f);
+            glLightf(L, GL_QUADRATIC_ATTENUATION, 0.002f);
+} else {
+            glDisable(L);
+        }
+    }
 }
 
 static void set_material(const Material* material)
@@ -214,28 +305,135 @@ static int entity_casts_shadow(const Entity* e)
     if (strcmp(e->type, "painting") == 0) return 0;
     if (strcmp(e->type, "plane") == 0) return 0;
     if (strcmp(e->type, "lamp") == 0) return 0;
+    // Glass display cases should not cast a strong planar shadow.
+    if (strcmp(e->type, "case_glass") == 0) return 0;
     // Everything else can cast.
     return 1;
 }
 
-static void render_planar_shadows(const Scene* scene)
+static int entity_is_transparent(const Entity* e)
 {
-    // Keep the light position consistent with set_lighting_with_intensity().
-    float lx = 0.0f, ly = 0.0f, lz = 3.75f;
+    return (strcmp(e->type, "case_glass") == 0);
+}
+
+static void draw_entity_opaque(const Entity* e)
+{
+    // Safety: glass/blending pass must not leak state into opaque rendering.
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+    glPushMatrix();
+    apply_transform(e);
+    glBindTexture(GL_TEXTURE_2D, e->texture_id);
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    // Some imported OBJ models have inconsistent winding / normals.
+    // With backface culling enabled this can look like "holes" (missing triangles).
+    // For statues we draw two-sided to avoid that artifact.
+    GLboolean cull_was_enabled = glIsEnabled(GL_CULL_FACE);
+    if (strcmp(e->type, "statue") == 0) {
+        glDisable(GL_CULL_FACE);
+    }
+    draw_model((Model*)&e->model);
+
+    if (strcmp(e->type, "statue") == 0 && cull_was_enabled) {
+        glEnable(GL_CULL_FACE);
+    }
+    glPopMatrix();
+}
+
+static int find_nearest_pedestal(const Scene* scene, const Entity* statue)
+{
+    int best = -1;
+    float best_d2 = 1e30f;
     for (int i = 0; i < scene->entity_count; i++) {
-        const Entity* e = &scene->entities[i];
-        if (strcmp(e->type, "lamp") == 0) {
-            lx = e->px;
-            ly = e->py;
-            lz = e->pz - 0.20f;
-            break;
+        const Entity* p = &scene->entities[i];
+        if (strcmp(p->type, "pedestal") != 0) continue;
+        const float dx = statue->px - p->px;
+        const float dy = statue->py - p->py;
+        const float d2 = dx*dx + dy*dy;
+        if (d2 < best_d2) {
+            best_d2 = d2;
+            best = i;
         }
     }
-    const float light_pos[4] = { lx, ly, lz, 1.0f };
+    return best;
+}
 
-    // Room dims must match draw_room_world_quads().
-    const float room_w = 12.0f;
-    const float half   = room_w * 0.5f;
+static void draw_entity_glass(const Entity* e)
+{
+    // Transparent "vitrine" glass.
+    // Key points (fixed pipeline):
+    //   - draw AFTER all opaque objects (done in render_scene)
+    //   - enable blending
+    //   - disable depth writes (but keep depth test)
+    //   - disable textures (so we don't get a "white painted cube")
+    //   - disable color material (otherwise glColor overrides material)
+    //   - draw two-sided (glass should be visible from inside too)
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_COLOR_MATERIAL);
+    glDisable(GL_CULL_FACE);
+
+    // A clearer glass look: low diffuse, strong specular, modest ambient.
+    const float a = 0.18f;
+    float amb[]  = { 0.10f, 0.10f, 0.12f, a };
+    float dif[]  = { 0.22f, 0.24f, 0.26f, a };
+    float spec[] = { 0.90f, 0.90f, 0.90f, 1.0f };
+    float emi[]  = { 0.03f, 0.03f, 0.04f, 1.0f };
+
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT,  amb);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE,  dif);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, spec);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emi);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, 96.0f);
+
+    glColor4f(1.0f, 1.0f, 1.0f, a);
+
+    glPushMatrix();
+    apply_transform(e);
+    draw_model((Model*)&e->model);
+    glPopMatrix();
+
+    // Reset emission so it doesn't "stick" to later materials.
+    {
+        float emi0[] = {0.0f, 0.0f, 0.0f, 1.0f};
+        glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, emi0);
+    }
+
+    glDepthMask(GL_TRUE);
+    glPopAttrib();
+}
+
+static void render_planar_shadows(const Scene* scene)
+{
+    // Collect up to 3 lamps from scene.csv.
+    float lamp_pos[3][4];
+    int lamp_count = 0;
+    for (int i = 0; i < scene->entity_count && lamp_count < 3; i++) {
+        const Entity* e = &scene->entities[i];
+        if (strcmp(e->type, "lamp") == 0) {
+            lamp_pos[lamp_count][0] = e->px;
+            lamp_pos[lamp_count][1] = e->py;
+            lamp_pos[lamp_count][2] = e->pz - 0.20f; // slightly below the fixture
+            lamp_pos[lamp_count][3] = 1.0f;
+            lamp_count++;
+        }
+    }
+    if (lamp_count == 0) {
+        // Fallback: one light near the ceiling, center.
+        lamp_pos[0][0] = 0.0f;
+        lamp_pos[0][1] = 0.0f;
+        lamp_pos[0][2] = (ROOM_H - 0.25f);
+        lamp_pos[0][3] = 1.0f;
+        lamp_count = 1;
+    }
 
     // If the light is "off", don't draw projected shadows.
     if (scene->light_intensity <= 0.001f) {
@@ -247,7 +445,7 @@ static void render_planar_shadows(const Scene* scene)
     float t = scene->light_intensity / 3.0f;
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
-    const float alpha_base = 0.72f * t;
+    const float alpha_base = (0.72f * t);
 
     // Render dark, translucent projected geometry onto planes.
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_POLYGON_BIT);
@@ -263,66 +461,56 @@ static void render_planar_shadows(const Scene* scene)
     glPolygonOffset(-2.0f, -2.0f);
     glDepthMask(GL_FALSE);
 
-    // Helper macro: draw all caster entities projected with a given shadow matrix.
-    // We apply a tiny lift along the receiver normal to avoid flicker.
-#define DRAW_SHADOWS_ON_PLANE(_shadow_mat, _nx, _ny, _nz) \
-    do { \
-        for (int i = 0; i < scene->entity_count; i++) { \
-            const Entity* e = &scene->entities[i]; \
-            if (!entity_casts_shadow(e)) continue; \
-            float per_alpha = alpha_base; \
-            if (strcmp(e->type, "pedestal") == 0) { \
-                per_alpha *= 0.75f; \
-            } \
-            glColor4f(0.0f, 0.0f, 0.0f, per_alpha); \
-            glPushMatrix(); \
-            glMultMatrixf((_shadow_mat)); \
-            glTranslatef((_nx) * 0.0030f, (_ny) * 0.0030f, (_nz) * 0.0030f); \
-            apply_transform(e); \
-            draw_model((Model*)&e->model); \
-            glPopMatrix(); \
-        } \
-    } while (0)
+    // Multiple lights would create multiple shadows. For a clean "museum" look (and to
+    // avoid confusing/tricky multi-shadow situations, use ONE "key" lamp for shadows.
+    // The other lamps still contribute to lighting, but only the key lamp casts planar shadows.
 
-    // 1) FLOOR (z=0)
-    {
-        const float floor_plane[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
-        float shadow_mat[16];
-        build_shadow_matrix(shadow_mat, floor_plane, light_pos);
-        DRAW_SHADOWS_ON_PLANE(shadow_mat, 0.0f, 0.0f, 1.0f);
+    // Pick the lamp closest to the corridor center (|y| minimal) as the key light.
+    int key = 0;
+    float best_abs_y = fabsf(lamp_pos[0][1]);
+    for (int li = 1; li < lamp_count; li++) {
+        float ay = fabsf(lamp_pos[li][1]);
+        if (ay < best_abs_y) { best_abs_y = ay; key = li; }
     }
+    const float* key_light_pos = lamp_pos[key];
 
-    // 2) WALLS (planar projection onto each wall plane)
-    // Back wall: y = -half  =>  y + half = 0, normal +Y
-    {
-        const float plane[4] = { 0.0f, 1.0f, 0.0f, half };
-        float shadow_mat[16];
-        build_shadow_matrix(shadow_mat, plane, light_pos);
-        DRAW_SHADOWS_ON_PLANE(shadow_mat, 0.0f, 1.0f, 0.0f);
-    }
-    // Front wall: y = +half  =>  -y + half = 0, normal -Y
-    {
-        const float plane[4] = { 0.0f, -1.0f, 0.0f, half };
-        float shadow_mat[16];
-        build_shadow_matrix(shadow_mat, plane, light_pos);
-        DRAW_SHADOWS_ON_PLANE(shadow_mat, 0.0f, -1.0f, 0.0f);
-    }
-    // Left wall: x = -half  =>  x + half = 0, normal +X
-    {
-        const float plane[4] = { 1.0f, 0.0f, 0.0f, half };
-        float shadow_mat[16];
-        build_shadow_matrix(shadow_mat, plane, light_pos);
-        DRAW_SHADOWS_ON_PLANE(shadow_mat, 1.0f, 0.0f, 0.0f);
-    }
-    // Right wall: x = +half  =>  -x + half = 0, normal -X
-    {
-        const float plane[4] = { -1.0f, 0.0f, 0.0f, half };
-        float shadow_mat[16];
-        build_shadow_matrix(shadow_mat, plane, light_pos);
-        DRAW_SHADOWS_ON_PLANE(shadow_mat, -1.0f, 0.0f, 0.0f);
-    }
+    for (int i = 0; i < scene->entity_count; i++) {
+        const Entity* e = &scene->entities[i];
+        if (!entity_casts_shadow(e)) continue;
 
-#undef DRAW_SHADOWS_ON_PLANE
+        const float* light_pos = key_light_pos;
+
+        float per_alpha = alpha_base;
+        if (strcmp(e->type, "pedestal") == 0) {
+            per_alpha *= 0.75f;
+        }
+        glColor4f(0.0f, 0.0f, 0.0f, per_alpha);
+
+        // Performance note:
+        // Projected planar shadows require re-drawing geometry. With imported
+        // high-poly statues this can become very slow. For a stable demo:
+        //  - project ONLY to the floor (not to walls)
+        //  - and for high-poly models draw a low-poly proxy instead.
+
+        // 1) FLOOR (z=0)
+        {
+            const float floor_plane[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
+            float m[16];
+            build_shadow_matrix(m, floor_plane, light_pos);
+            glPushMatrix();
+            glMultMatrixf(m);
+            glTranslatef(0.0f, 0.0f, 0.0030f);
+            apply_transform(e);
+            // Use full projected geometry for most objects.
+            // Only fall back to a cheap circular proxy for extremely high-poly meshes.
+            if (e->model.n_vertices > 50000) {
+                draw_shadow_proxy_circle(e);
+            } else {
+                draw_model((Model*)&e->model);
+            }
+            glPopMatrix();
+        }
+    }
 
     glDepthMask(GL_TRUE);
     glPopAttrib();
@@ -388,16 +576,56 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
         e->sx = rows[i].sx; e->sy = rows[i].sy; e->sz = rows[i].sz;
 
         e->animated = (strcmp(e->type, "statue") == 0);
-        e->anim_angle_deg = e->ry;
+        // Z-up world: we spin statues around Z (yaw), so seed animation from rz.
+        e->anim_angle_deg = e->rz;
 
         load_model(&e->model, rows[i].model);
 
+        // Small "extra" for presentation: keep certain pieces static.
+        // (e.g., the angel/fairy and the trophy look better as fixed exhibits.)
+        if (e->animated) {
+            const char* mp = rows[i].model;
+            if (mp && (strstr(mp, "fairy") || strstr(mp, "trophy"))) {
+                e->animated = 0;
+            }
+        }
+
         compute_model_bounds_sphere(&e->model, &e->bounds_center_local, &e->bounds_radius_local);
+        e->bounds_min_z_local = compute_model_min_z(&e->model);
+
+        // Auto-grounding for statues:
+        // We compute a local min-Z and store an offset so the model's base can sit on a surface.
+        // The actual target surface height (pedestal top) is assigned AFTER all entities are loaded
+        // (so we can find the nearest pedestal).
+        if (strcmp(e->type, "statue") == 0) {
+            e->ground_offset_z = (-e->bounds_min_z_local) * e->sz;
+        } else {
+            e->ground_offset_z = 0.0f;
+        }
 
         // textura
         e->texture_id = load_texture((char*)rows[i].texture);
 
         printf("Loaded entity: %s | model=%s | tex=%s\n", e->type, rows[i].model, rows[i].texture);
+    }
+
+    // Post-process: snap each statue onto the nearest pedestal.
+    // This removes the "floating" artifacts when models have different local origins.
+    for (int i = 0; i < scene->entity_count; i++) {
+        Entity* e = &scene->entities[i];
+        if (strcmp(e->type, "statue") != 0) continue;
+
+        const int pidx = find_nearest_pedestal(scene, e);
+        if (pidx < 0) continue;
+        const Entity* p = &scene->entities[pidx];
+
+        // Pedestal top height in world Z.
+        // pedestal.obj is treated as roughly 1 unit tall in local space.
+        const float pedestal_top_z = p->pz + 0.5f * p->sz;
+
+        // We want: (e->pz + e->ground_offset_z) + (minZ * scaleZ) == pedestal_top_z.
+        // Since ground_offset_z == -minZ*scaleZ, we can simply set e->pz = pedestal_top_z.
+        e->pz = pedestal_top_z;
     }
 }
 
@@ -414,7 +642,9 @@ void update_scene(Scene* scene, double elapsed_time)
                 // wrap
                 if (e->anim_angle_deg > 360.0f) e->anim_angle_deg -= 360.0f;
                 if (e->anim_angle_deg < 0.0f)   e->anim_angle_deg += 360.0f;
-                e->ry = e->anim_angle_deg;
+                // Z-up world: yaw around the UP axis (Z rotation in apply_transform order)
+                // so the statue rotates "on the pedestal" instead of tumbling.
+                e->rz = e->anim_angle_deg;
             }
         }
     }
@@ -452,13 +682,16 @@ void render_scene(const Scene* scene)
     for (int i = 0; i < scene->entity_count; i++) {
         if (i == scene->selected_entity) continue;
         const Entity* e = &scene->entities[i];
+        if (entity_is_transparent(e)) continue;
+        draw_entity_opaque(e);
+    }
 
-        glPushMatrix();
-        apply_transform(e);
-        glBindTexture(GL_TEXTURE_2D, e->texture_id);
-        glColor3f(1.0f, 1.0f, 1.0f);
-        draw_model((Model*)&e->model);
-        glPopMatrix();
+    // Transparent pass (e.g., glass display cases).
+    for (int i = 0; i < scene->entity_count; i++) {
+        if (i == scene->selected_entity) continue;
+        const Entity* e = &scene->entities[i];
+        if (!entity_is_transparent(e)) continue;
+        draw_entity_glass(e);
     }
 
     /* Draw selected normally + write stencil = 1 */
@@ -469,12 +702,11 @@ void render_scene(const Scene* scene)
         glStencilFunc(GL_ALWAYS, 1, 0xFF);
         glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
 
-        glPushMatrix();
-        apply_transform(e);
-        glBindTexture(GL_TEXTURE_2D, e->texture_id);
-        glColor3f(1.0f, 1.0f, 1.0f);
-        draw_model((Model*)&e->model);
-        glPopMatrix();
+        if (entity_is_transparent(e)) {
+            draw_entity_glass(e);
+        } else {
+            draw_entity_opaque(e);
+        }
 
         /* Outline pass: slightly scaled copy where stencil != 1 */
         glStencilMask(0x00);
@@ -484,12 +716,15 @@ void render_scene(const Scene* scene)
         glDisable(GL_TEXTURE_2D);
         glDisable(GL_LIGHTING);
 
-        glPushMatrix();
-        apply_transform(e);
-        glScalef(1.05f, 1.05f, 1.05f);
-        glColor3f(1.0f, 0.85f, 0.20f);
-        draw_model((Model*)&e->model);
-        glPopMatrix();
+        // Outline for transparent objects isn't very readable; keep it for opaque only.
+        if (!entity_is_transparent(e)) {
+            glPushMatrix();
+            apply_transform(e);
+            glScalef(1.05f, 1.05f, 1.05f);
+            glColor3f(1.0f, 0.85f, 0.20f);
+            draw_model((Model*)&e->model);
+            glPopMatrix();
+        }
 
         glEnable(GL_LIGHTING);
         glEnable(GL_TEXTURE_2D);
@@ -882,63 +1117,80 @@ static void quad_world(float x1, float y1, float z1,
 
 static void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex)
 {
-    // Human-scale room (meters)
-    const float room_w = 12.0f;
-    const float room_h = 4.0f;
-    const float half   = room_w * 0.5f;
+    // Corridor-scale room (meters)
+    const float half_w = ROOM_W * 0.5f;
+    const float half_l = ROOM_L * 0.5f;
+
+    // Texture tiling: keep texel density consistent when we change room size.
+    // One tile roughly every 2 meters.
+    const float tile = 2.0f;
+    const float rep_w = ROOM_W / tile;
+    const float rep_l = ROOM_L / tile;
+    const float rep_h = ROOM_H / tile;
 
     // PADLÓ
     glBindTexture(GL_TEXTURE_2D, floor_tex);
-    quad_world(-half, -half, 0.0f,
-               +half, -half, 0.0f,
-               +half, +half, 0.0f,
-               -half, +half, 0.0f,
+    quad_world(-half_w, -half_l, 0.0f,
+               +half_w, -half_l, 0.0f,
+               +half_w, +half_l, 0.0f,
+               -half_w, +half_l, 0.0f,
                0.0f, 0.0f, 1.0f,
-               5.0f, 5.0f);
+               rep_w, rep_l);
 
     // PLAFON (normál lefelé)
     glBindTexture(GL_TEXTURE_2D, ceiling_tex);
-    quad_world(-half, -half, room_h,
-               -half, +half, room_h,
-               +half, +half, room_h,
-               +half, -half, room_h,
+    quad_world(-half_w, -half_l, ROOM_H,
+               -half_w, +half_l, ROOM_H,
+               +half_w, +half_l, ROOM_H,
+               +half_w, -half_l, ROOM_H,
                0.0f, 0.0f, -1.0f,
-               5.0f, 5.0f);
+               rep_w, rep_l);
 
     // FALAK
+    // Give walls a slightly stronger ambient/diffuse material so they look consistent even in low light.
+    glDisable(GL_COLOR_MATERIAL);
+    {
+        float wall_amb[] = {0.18f, 0.18f, 0.18f, 1.0f};
+        float wall_dif[] = {0.95f, 0.95f, 0.95f, 1.0f};
+        glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, wall_amb);
+        glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, wall_dif);
+    }
+
     glBindTexture(GL_TEXTURE_2D, wall_tex);
 
     // HÁTSÓ (Y=-half) normál +Y
-    quad_world(-half, -half, 0.0f,
-               +half, -half, 0.0f,
-               +half, -half, room_h,
-               -half, -half, room_h,
+    quad_world(-half_w, -half_l, 0.0f,
+               +half_w, -half_l, 0.0f,
+               +half_w, -half_l, ROOM_H,
+               -half_w, -half_l, ROOM_H,
                0.0f, 1.0f, 0.0f,
-               1.0f, 1.0f);
+               rep_w, rep_h);
 
     // ELSŐ (Y=+half) normál -Y
-    quad_world(-half, +half, 0.0f,
-               -half, +half, room_h,
-               +half, +half, room_h,
-               +half, +half, 0.0f,
+    quad_world(-half_w, +half_l, 0.0f,
+               -half_w, +half_l, ROOM_H,
+               +half_w, +half_l, ROOM_H,
+               +half_w, +half_l, 0.0f,
                0.0f, -1.0f, 0.0f,
-               1.0f, 1.0f);
+               rep_w, rep_h);
 
     // BAL (X=-half) normál +X
-    quad_world(-half, -half, 0.0f,
-               -half, -half, room_h,
-               -half, +half, room_h,
-               -half, +half, 0.0f,
+    quad_world(-half_w, -half_l, 0.0f,
+               -half_w, -half_l, ROOM_H,
+               -half_w, +half_l, ROOM_H,
+               -half_w, +half_l, 0.0f,
                1.0f, 0.0f, 0.0f,
-               1.0f, 1.0f);
+               rep_l, rep_h);
 
     // JOBB (X=+half) normál -X
-    quad_world(+half, -half, 0.0f,
-               +half, +half, 0.0f,
-               +half, +half, room_h,
-               +half, -half, room_h,
+    quad_world(+half_w, -half_l, 0.0f,
+               +half_w, +half_l, 0.0f,
+               +half_w, +half_l, ROOM_H,
+               +half_w, -half_l, ROOM_H,
                -1.0f, 0.0f, 0.0f,
-               1.0f, 1.0f);
+               rep_l, rep_h);
+
+    glEnable(GL_COLOR_MATERIAL);
 }
 
 #ifdef SHOW_DEBUG_AXES
