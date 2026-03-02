@@ -15,6 +15,7 @@ void toggle_help(void) {
         printf("B: human mode (walk + eye height)\n");
         printf("+ / - : light intensity (top row or numpad)\n");
         printf("H: shadows on/off\n");
+        printf("F11 / Alt+Enter: fullscreen toggle\n");
         printf("F1: help\n");
         printf("ESC: quit\n");
         printf("===================================\n\n");
