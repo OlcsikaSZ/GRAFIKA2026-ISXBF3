@@ -28,6 +28,13 @@ typedef struct App
 
     int window_w;
     int window_h;
+
+    /* Fullscreen toggle (F11 / Alt+Enter) */
+    bool is_fullscreen;
+    int windowed_x;
+    int windowed_y;
+    int windowed_w;
+    int windowed_h;
 } App;
 
 /**
