@@ -64,6 +64,19 @@ static float compute_model_min_z(const Model* m)
     return minz;
 }
 
+static float compute_model_max_z(const Model* m)
+{
+    if (!m || !m->vertices || m->n_vertices <= 0) {
+        return 0.0f;
+    }
+    float maxz = m->vertices[0].z;
+    for (int i = 1; i < m->n_vertices; i++) {
+        const float z = m->vertices[i].z;
+        if (z > maxz) maxz = z;
+    }
+    return maxz;
+}
+
 // Z-up világ: X=bal/jobb, Y=előre/hátra, Z=felfelé (összhangban camera.c-vel)
 // A korábbi verzió falait forgatásokkal rajzoltuk. Az gyakorlatban néha "lyukas szobát"
 // eredményezett (egyes falak a kamera szögétől függően eltűntek / belógtak).
@@ -474,23 +487,24 @@ static void render_planar_shadows(const Scene* scene)
     }
     const float* key_light_pos = lamp_pos[key];
 
+    // NOTE:
+    // Planar (projected) shadows are a fast approximation. One common artifact is that
+    // tall objects placed on a pedestal can "paint" their full shadow onto the floor,
+    // even where the pedestal itself would block the light.
+    //
+    // Without switching to full shadow mapping, a practical fix is to draw pedestal
+    // shadows *after* other objects (and slightly stronger). That way the pedestal's
+    // projected shadow acts like an occluder mask over the statue shadow.
+
+    const float* light_pos = key_light_pos;
+
+    // Pass 1: everything except pedestals
     for (int i = 0; i < scene->entity_count; i++) {
         const Entity* e = &scene->entities[i];
         if (!entity_casts_shadow(e)) continue;
+        if (strcmp(e->type, "pedestal") == 0) continue;
 
-        const float* light_pos = key_light_pos;
-
-        float per_alpha = alpha_base;
-        if (strcmp(e->type, "pedestal") == 0) {
-            per_alpha *= 0.75f;
-        }
-        glColor4f(0.0f, 0.0f, 0.0f, per_alpha);
-
-        // Performance note:
-        // Projected planar shadows require re-drawing geometry. With imported
-        // high-poly statues this can become very slow. For a stable demo:
-        //  - project ONLY to the floor (not to walls)
-        //  - and for high-poly models draw a low-poly proxy instead.
+        glColor4f(0.0f, 0.0f, 0.0f, alpha_base);
 
         // 1) FLOOR (z=0)
         {
@@ -501,13 +515,34 @@ static void render_planar_shadows(const Scene* scene)
             glMultMatrixf(m);
             glTranslatef(0.0f, 0.0f, 0.0030f);
             apply_transform(e);
-            // Use full projected geometry for most objects.
-            // Only fall back to a cheap circular proxy for extremely high-poly meshes.
             if (e->model.n_vertices > 50000) {
                 draw_shadow_proxy_circle(e);
             } else {
                 draw_model((Model*)&e->model);
             }
+            glPopMatrix();
+        }
+    }
+
+    // Pass 2: pedestals last (masking/occluding)
+    for (int i = 0; i < scene->entity_count; i++) {
+        const Entity* e = &scene->entities[i];
+        if (!entity_casts_shadow(e)) continue;
+        if (strcmp(e->type, "pedestal") != 0) continue;
+
+        float pedestal_alpha = alpha_base * 1.10f;
+        if (pedestal_alpha > 0.85f) pedestal_alpha = 0.85f;
+        glColor4f(0.0f, 0.0f, 0.0f, pedestal_alpha);
+
+        {
+            const float floor_plane[4] = { 0.0f, 0.0f, 1.0f, 0.0f };
+            float m[16];
+            build_shadow_matrix(m, floor_plane, light_pos);
+            glPushMatrix();
+            glMultMatrixf(m);
+            glTranslatef(0.0f, 0.0f, 0.0030f);
+            apply_transform(e);
+            draw_model((Model*)&e->model);
             glPopMatrix();
         }
     }
@@ -592,6 +627,7 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
 
         compute_model_bounds_sphere(&e->model, &e->bounds_center_local, &e->bounds_radius_local);
         e->bounds_min_z_local = compute_model_min_z(&e->model);
+        e->bounds_max_z_local = compute_model_max_z(&e->model);
 
         // Auto-grounding for statues:
         // We compute a local min-Z and store an offset so the model's base can sit on a surface.
@@ -627,6 +663,78 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
         // Since ground_offset_z == -minZ*scaleZ, we can simply set e->pz = pedestal_top_z.
         e->pz = pedestal_top_z;
     }
+}
+
+static int is_entity_collidable(const Entity* e)
+{
+    if (e == NULL) return 0;
+    // Don't collide with flat wall paintings or ceiling lamp.
+    if (strcmp(e->type, "painting") == 0) return 0;
+    if (strcmp(e->type, "lamp") == 0) return 0;
+    return 1;
+}
+
+void resolve_camera_collisions(const Scene* scene, Camera* camera)
+{
+    if (scene == NULL || camera == NULL) return;
+
+    // Camera capsule approximation (upright cylinder):
+    // - X/Y: circle
+    // - Z: overlap test against entity AABB
+    const float cam_r = 0.30f;
+    const float cam_h = 1.70f; // approximate body height (eye is at ~1.7m)
+
+    const float cam_z_max = (float)camera->position.z;
+    const float cam_z_min = cam_z_max - cam_h;
+
+    for (int i = 0; i < scene->entity_count; i++) {
+        const Entity* e = &scene->entities[i];
+        if (!is_entity_collidable(e)) continue;
+
+        // World-space vertical interval of the entity.
+        // Note: apply_transform() uses translate(pz + ground_offset_z) and then scale(sz).
+        const float base_z = e->pz + e->ground_offset_z;
+        const float e_z_min = base_z + e->bounds_min_z_local * e->sz;
+        const float e_z_max = base_z + e->bounds_max_z_local * e->sz;
+
+        // If there's no vertical overlap, ignore.
+        if (e_z_max < cam_z_min || e_z_min > cam_z_max) {
+            continue;
+        }
+
+        // World-space horizontal circle approximation from the local bounds sphere.
+        const float sx = e->sx;
+        const float sy = e->sy;
+        const float sxy = (sx > sy) ? sx : sy;
+        float cx = e->px + e->bounds_center_local.x * sx;
+        float cy = e->py + e->bounds_center_local.y * sy;
+        float r  = e->bounds_radius_local * sxy;
+
+        // Pad slightly so we don't visually clip into meshes.
+        r += 0.05f;
+
+        const float dx = (float)camera->position.x - cx;
+        const float dy = (float)camera->position.y - cy;
+        const float dist2 = dx*dx + dy*dy;
+        const float min_dist = cam_r + r;
+        const float min_dist2 = min_dist * min_dist;
+
+        if (dist2 < min_dist2) {
+            float dist = sqrtf(dist2);
+            // Avoid division by zero when we're exactly at the center.
+            if (dist < 0.0001f) {
+                dist = 0.0001f;
+            }
+            const float nx = dx / dist;
+            const float ny = dy / dist;
+            const float push = (min_dist - dist) + 0.001f;
+            camera->position.x += nx * push;
+            camera->position.y += ny * push;
+        }
+    }
+
+    // After pushing out of objects, ensure we still stay within the room.
+    clamp_camera_to_room(camera);
 }
 
 void update_scene(Scene* scene, double elapsed_time)
