@@ -7,6 +7,7 @@
 #include <SDL2/SDL_image.h>
 
 static void reshape(App* app, GLsizei width, GLsizei height);
+static void toggle_fullscreen(App* app);
 
 void init_app(App* app, int width, int height)
 {
@@ -24,11 +25,17 @@ void init_app(App* app, int width, int height)
     /* Request a stencil buffer for stencil-outline highlighting. */
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
+    app->is_fullscreen = false;
+    app->windowed_x = SDL_WINDOWPOS_CENTERED;
+    app->windowed_y = SDL_WINDOWPOS_CENTERED;
+    app->windowed_w = width;
+    app->windowed_h = height;
+
     app->window = SDL_CreateWindow(
         "Virtual Gallery – Interactive Museum Room",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         width, height,
-        SDL_WINDOW_OPENGL);
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     if (app->window == NULL) {
         printf("[ERROR] Unable to create the application window!\n");
         return;
@@ -107,39 +114,41 @@ void init_opengl()
 
 static void reshape(App* app, GLsizei width, GLsizei height)
 {
-    int x, y, w, h;
-    double ratio;
+    int drawable_w = width;
+    int drawable_h = height;
 
-    ratio = (double)width / height;
-    if (ratio > VIEWPORT_RATIO) {
-        w = (int)((double)height * VIEWPORT_RATIO);
-        h = height;
-        x = (width - w) / 2;
-        y = 0;
-    }
-    else {
-        w = width;
-        h = (int)((double)width / VIEWPORT_RATIO);
-        x = 0;
-        y = (height - h) / 2;
+    /*
+     * IMPORTANT (Windows + DPI scaling):
+     * The OpenGL drawable size can differ from the window size.
+     * If we use only SDL_GetWindowSize(), the viewport can end up smaller
+     * than the actual framebuffer -> "render in the corner" / white borders.
+     */
+    if (app && app->window) {
+        SDL_GL_GetDrawableSize(app->window, &drawable_w, &drawable_h);
     }
 
-    glViewport(x, y, w, h);
+    if (drawable_w <= 0) drawable_w = 1;
+    if (drawable_h <= 0) drawable_h = 1;
+
+    /* Fill the whole framebuffer. No letterboxing in fullscreen or resized window. */
+    glViewport(0, 0, drawable_w, drawable_h);
+
     if (app) {
-        app->viewport_x = x;
-        app->viewport_y = y;
-        app->viewport_w = w;
-        app->viewport_h = h;
+        app->viewport_x = 0;
+        app->viewport_y = 0;
+        app->viewport_w = drawable_w;
+        app->viewport_h = drawable_h;
         app->window_w = width;
         app->window_h = height;
     }
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     {
-        // Szűkebb FOV 'ember módban' (természetesebb arányok), szélesebb 'fly' módban.
+        /* Keep vertical FOV stable; adapt horizontally to the current aspect. */
         const double human = app && app->camera.walk_bob_enabled;
-        const double half_w = human ? 0.060 : 0.080;
         const double half_h = human ? 0.045 : 0.060;
+        const double aspect = (double)drawable_w / (double)drawable_h;
+        const double half_w = half_h * aspect;
         glFrustum(-half_w, half_w, -half_h, half_h, .1, 200.0);
     }
 }
@@ -160,8 +169,17 @@ void handle_app_events(App* app)
         switch (event.type) {
         case SDL_KEYDOWN:
             switch (event.key.keysym.scancode) {
+            case SDL_SCANCODE_F11:
+                toggle_fullscreen(app);
+                break;
             case SDL_SCANCODE_ESCAPE:
                 app->is_running = false;
+                break;
+            case SDL_SCANCODE_RETURN:
+                /* Classic Alt+Enter fullscreen toggle */
+                if ((event.key.keysym.mod & KMOD_ALT) != 0) {
+                    toggle_fullscreen(app);
+                }
                 break;
             case SDL_SCANCODE_W:
                 set_camera_speed(&(app->camera), 1);
@@ -265,7 +283,8 @@ void handle_app_events(App* app)
                 if (dx + dy <= 3) {
                     const int idx = pick_entity(
                         &app->scene, &app->camera,
-                        event.button.x, event.button.y,
+                        (int)((double)event.button.x * (double)app->viewport_w / (double)app->window_w),
+                        (int)((double)event.button.y * (double)app->viewport_h / (double)app->window_h),
                         app->viewport_x, app->viewport_y, app->viewport_w, app->viewport_h);
 
                     // Convenience: clicking the statue toggles animation
@@ -288,9 +307,55 @@ void handle_app_events(App* app)
         case SDL_QUIT:
             app->is_running = false;
             break;
+        case SDL_WINDOWEVENT:
+            /* Keep aspect-correct viewport on resize and after fullscreen switch. */
+            if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
+                event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                reshape(app, (GLsizei)event.window.data1, (GLsizei)event.window.data2);
+            }
+            break;
         default:
             break;
         }
+    }
+}
+
+static void toggle_fullscreen(App* app)
+{
+    if (app == NULL || app->window == NULL) {
+        return;
+    }
+
+    if (!app->is_fullscreen) {
+        /* Save the current windowed position/size so we can restore it. */
+        SDL_GetWindowPosition(app->window, &app->windowed_x, &app->windowed_y);
+        SDL_GetWindowSize(app->window, &app->windowed_w, &app->windowed_h);
+
+        /* Borderless fullscreen that matches the desktop resolution. */
+        if (SDL_SetWindowFullscreen(app->window, SDL_WINDOW_FULLSCREEN_DESKTOP) == 0) {
+            app->is_fullscreen = true;
+        } else {
+            printf("[WARN] Fullscreen failed: %s\n", SDL_GetError());
+        }
+    } else {
+        if (SDL_SetWindowFullscreen(app->window, 0) == 0) {
+            app->is_fullscreen = false;
+            SDL_SetWindowPosition(app->window, app->windowed_x, app->windowed_y);
+            SDL_SetWindowSize(app->window, app->windowed_w, app->windowed_h);
+        } else {
+            printf("[WARN] Exit fullscreen failed: %s\n", SDL_GetError());
+        }
+    }
+
+    /* Refresh viewport after the size changes. */
+    {
+        int w = 0, h = 0;
+        SDL_GetWindowSize(app->window, &w, &h);
+
+        /* Some Windows drivers require re-binding the context after mode switch. */
+        SDL_GL_MakeCurrent(app->window, app->gl_context);
+
+        reshape(app, (GLsizei)w, (GLsizei)h);
     }
 }
 
@@ -304,6 +369,8 @@ void update_app(App* app)
     app->uptime = current_time;
 
     update_camera(&(app->camera), elapsed_time);
+    // Prevent walking through exhibits (pedestals, statues, ducks, etc.).
+    resolve_camera_collisions(&(app->scene), &(app->camera));
     update_scene(&(app->scene), elapsed_time);
 }
 
