@@ -34,6 +34,9 @@ typedef struct Entity
     /* Local-space AABB min Z (for auto-grounding statues) */
     float bounds_min_z_local;
 
+    /* Local-space AABB max Z (for simple collision checks) */
+    float bounds_max_z_local;
+
     /* Extra world-space Z offset to place model base onto a surface (pedestal top). */
     float ground_offset_z;
 } Entity;
@@ -89,5 +92,11 @@ int pick_entity(Scene* scene, const Camera* camera,
 
 void draw_origin(void);
 void draw_plane(int n);
+
+/**
+ * Resolve simple camera collisions against scene entities (pedestals, statues, etc.).
+ * This is a lightweight MVP: circle-vs-circle in X/Y with a Z overlap check.
+ */
+void resolve_camera_collisions(const Scene* scene, Camera* camera);
 
 #endif /* SCENE_H */
