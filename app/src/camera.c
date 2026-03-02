@@ -40,7 +40,7 @@ void toggle_walk_bob(Camera* camera)
 
 // Egyszerű szobahatár (AABB) — MVP ütközés / falon átmenés tiltás
 // Fontos: ez a scene.c-ben rajzolt szoba méreteivel van összhangban.
-static void clamp_to_room(Camera* camera)
+void clamp_camera_to_room(Camera* camera)
 {
     // Must match scene.c (ROOM_W / ROOM_L / ROOM_H).
     const double half_w = 5.0;   // ROOM_W = 10.0
@@ -83,7 +83,7 @@ void update_camera(Camera* camera, double time)
         camera->position.z += camera->speed.z * time;
     }
 
-    clamp_to_room(camera);
+    clamp_camera_to_room(camera);
 
     // Walking head-bob (kizárólag vizuális, collision nem érintett)
     // Ha mozogsz X/Y-ban, akkor enyhe bólogatás.
