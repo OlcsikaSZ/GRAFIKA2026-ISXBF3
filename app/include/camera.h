@@ -62,6 +62,12 @@ void set_camera_vertical_speed(Camera* camera, double speed);
  */
 void toggle_walk_bob(Camera* camera);
 
+/**
+ * Clamp camera position to the room bounds (walls/floor/ceiling).
+ * This is used both by the movement update and by collision resolution.
+ */
+void clamp_camera_to_room(Camera* camera);
+
 void show_texture_preview(void);
 
 #endif /* CAMERA_H */
