@@ -14,11 +14,18 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-static void compute_model_bounds_sphere(const Model* m, vec3* out_center, float* out_radius)
+static void compute_model_bounds(const Model* m,
+                                 vec3* out_center,
+                                 float* out_radius,
+                                 float* out_minx, float* out_maxx,
+                                 float* out_miny, float* out_maxy,
+                                 float* out_minz, float* out_maxz)
 {
     if (!m || !m->vertices || m->n_vertices <= 0) {
         out_center->x = out_center->y = out_center->z = 0.0f;
         *out_radius = 1.0f;
+        *out_minx = *out_miny = *out_minz = -0.5f;
+        *out_maxx = *out_maxy = *out_maxz =  0.5f;
         return;
     }
 
@@ -49,33 +56,12 @@ static void compute_model_bounds_sphere(const Model* m, vec3* out_center, float*
     const float dz = (maxz - minz);
     *out_radius = 0.5f * sqrtf(dx*dx + dy*dy + dz*dz);
     if (*out_radius < 0.001f) *out_radius = 0.001f;
+
+    *out_minx = minx; *out_maxx = maxx;
+    *out_miny = miny; *out_maxy = maxy;
+    *out_minz = minz; *out_maxz = maxz;
 }
 
-static float compute_model_min_z(const Model* m)
-{
-    if (!m || !m->vertices || m->n_vertices <= 0) {
-        return 0.0f;
-    }
-    float minz = m->vertices[0].z;
-    for (int i = 1; i < m->n_vertices; i++) {
-        const float z = m->vertices[i].z;
-        if (z < minz) minz = z;
-    }
-    return minz;
-}
-
-static float compute_model_max_z(const Model* m)
-{
-    if (!m || !m->vertices || m->n_vertices <= 0) {
-        return 0.0f;
-    }
-    float maxz = m->vertices[0].z;
-    for (int i = 1; i < m->n_vertices; i++) {
-        const float z = m->vertices[i].z;
-        if (z > maxz) maxz = z;
-    }
-    return maxz;
-}
 
 // Z-up világ: X=bal/jobb, Y=előre/hátra, Z=felfelé (összhangban camera.c-vel)
 // A korábbi verzió falait forgatásokkal rajzoltuk. Az gyakorlatban néha "lyukas szobát"
@@ -625,9 +611,20 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
             }
         }
 
-        compute_model_bounds_sphere(&e->model, &e->bounds_center_local, &e->bounds_radius_local);
-        e->bounds_min_z_local = compute_model_min_z(&e->model);
-        e->bounds_max_z_local = compute_model_max_z(&e->model);
+        // model bounds (sphere for picking + full AABB for collision/grounding)
+        {
+            float minx, maxx, miny, maxy, minz, maxz;
+            compute_model_bounds(&e->model,
+                                 &e->bounds_center_local,
+                                 &e->bounds_radius_local,
+                                 &minx, &maxx, &miny, &maxy, &minz, &maxz);
+            e->bounds_min_x_local = minx;
+            e->bounds_max_x_local = maxx;
+            e->bounds_min_y_local = miny;
+            e->bounds_max_y_local = maxy;
+            e->bounds_min_z_local = minz;
+            e->bounds_max_z_local = maxz;
+        }
 
         // Auto-grounding for statues:
         // We compute a local min-Z and store an offset so the model's base can sit on a surface.
@@ -679,9 +676,11 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
     if (scene == NULL || camera == NULL) return;
 
     // Camera capsule approximation (upright cylinder):
-    // - X/Y: circle
-    // - Z: overlap test against entity AABB
-    const float cam_r = 0.30f;
+    // - X/Y: circle (radius tuned to match the wall clamp feel)
+    // - Z: overlap test against entity vertical interval
+    // IMPORTANT: wall clamp uses wall_pad = 0.25 in camera.c. To get the same
+    // "as close as the wall" feel, we keep a similar radius here.
+    const float cam_r = 0.25f;
     const float cam_h = 1.70f; // approximate body height (eye is at ~1.7m)
 
     const float cam_z_max = (float)camera->position.z;
@@ -702,34 +701,72 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
             continue;
         }
 
-        // World-space horizontal circle approximation from the local bounds sphere.
-        const float sx = e->sx;
-        const float sy = e->sy;
-        const float sxy = (sx > sy) ? sx : sy;
-        float cx = e->px + e->bounds_center_local.x * sx;
-        float cy = e->py + e->bounds_center_local.y * sy;
-        float r  = e->bounds_radius_local * sxy;
+        // --- Horizontal collision: circle (camera) vs oriented rectangle (entity XY AABB + yaw) ---
+        // We compute an OBB in XY from the model's local AABB, scale, and entity yaw (rz).
 
-        // Pad slightly so we don't visually clip into meshes.
-        r += 0.05f;
+        // Local AABB center and half extents.
+        const float local_cx = (e->bounds_min_x_local + e->bounds_max_x_local) * 0.5f;
+        const float local_cy = (e->bounds_min_y_local + e->bounds_max_y_local) * 0.5f;
+        const float half_x = (e->bounds_max_x_local - e->bounds_min_x_local) * 0.5f * e->sx;
+        const float half_y = (e->bounds_max_y_local - e->bounds_min_y_local) * 0.5f * e->sy;
 
-        const float dx = (float)camera->position.x - cx;
-        const float dy = (float)camera->position.y - cy;
-        const float dist2 = dx*dx + dy*dy;
-        const float min_dist = cam_r + r;
-        const float min_dist2 = min_dist * min_dist;
+        // World center of the box.
+        const float box_cx = e->px + local_cx * e->sx;
+        const float box_cy = e->py + local_cy * e->sy;
 
-        if (dist2 < min_dist2) {
-            float dist = sqrtf(dist2);
-            // Avoid division by zero when we're exactly at the center.
-            if (dist < 0.0001f) {
-                dist = 0.0001f;
+        // Camera point in box space.
+        const float px = (float)camera->position.x - box_cx;
+        const float py = (float)camera->position.y - box_cy;
+
+        const float a = (float)(e->rz * (M_PI / 180.0));
+        const float ca = cosf(a);
+        const float sa = sinf(a);
+
+        // Rotate by -a (inverse) to go into box local axes.
+        const float lx =  ca * px + sa * py;
+        const float ly = -sa * px + ca * py;
+
+        // Closest point on (axis-aligned) rectangle in box space.
+        float qx = lx;
+        float qy = ly;
+        if (qx < -half_x) qx = -half_x;
+        if (qx >  half_x) qx =  half_x;
+        if (qy < -half_y) qy = -half_y;
+        if (qy >  half_y) qy =  half_y;
+
+        float dx = lx - qx;
+        float dy = ly - qy;
+        float d2 = dx*dx + dy*dy;
+
+        if (d2 < cam_r * cam_r) {
+            // If we're exactly inside (dx==dy==0), push out along the shallowest axis.
+            float push_lx = 0.0f;
+            float push_ly = 0.0f;
+
+            if (d2 < 1e-8f) {
+                const float pen_x = half_x - fabsf(lx);
+                const float pen_y = half_y - fabsf(ly);
+                if (pen_x < pen_y) {
+                    const float target = (lx >= 0.0f) ? (half_x + cam_r) : -(half_x + cam_r);
+                    push_lx = target - lx;
+                } else {
+                    const float target = (ly >= 0.0f) ? (half_y + cam_r) : -(half_y + cam_r);
+                    push_ly = target - ly;
+                }
+            } else {
+                const float d = sqrtf(d2);
+                const float nx = dx / d;
+                const float ny = dy / d;
+                const float push = (cam_r - d) + 0.0001f; // tiny epsilon
+                push_lx = nx * push;
+                push_ly = ny * push;
             }
-            const float nx = dx / dist;
-            const float ny = dy / dist;
-            const float push = (min_dist - dist) + 0.001f;
-            camera->position.x += nx * push;
-            camera->position.y += ny * push;
+
+            // Rotate push vector back to world space (+a).
+            const float wx = ca * push_lx - sa * push_ly;
+            const float wy = sa * push_lx + ca * push_ly;
+            camera->position.x += wx;
+            camera->position.y += wy;
         }
     }
 
