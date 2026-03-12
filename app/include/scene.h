@@ -14,6 +14,10 @@ typedef struct Entity
 {
     char type[32];
 
+    // Friendly UI metadata (filled from scene.csv type/model)
+    char display_name[64];
+    char description[128];
+
     Model model;
     GLuint texture_id;
 
