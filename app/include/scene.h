@@ -31,6 +31,12 @@ typedef struct Entity
     vec3 bounds_center_local;
     float bounds_radius_local;
 
+    /* Local-space AABB for collision in the horizontal plane (XY). */
+    float bounds_min_x_local;
+    float bounds_max_x_local;
+    float bounds_min_y_local;
+    float bounds_max_y_local;
+
     /* Local-space AABB min Z (for auto-grounding statues) */
     float bounds_min_z_local;
 
