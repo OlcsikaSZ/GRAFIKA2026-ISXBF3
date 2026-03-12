@@ -412,8 +412,9 @@ void render_app(App* app)
         if (app->scene.selected_entity >= 0 && app->scene.selected_entity < app->scene.entity_count) {
             const Entity* e = &app->scene.entities[app->scene.selected_entity];
             char buf[256];
-            snprintf(buf, sizeof(buf), "Selected: %s (#%d)\nLMB pick | T anim (statue)",
-                     e->type, app->scene.selected_entity);
+	            snprintf(buf, sizeof(buf),
+	                     "Selected: %s (#%d)\n%s\nLMB pick | R toggle rotate (statues)",
+	                     e->display_name, app->scene.selected_entity, e->description);
             draw_text_2d(ww, hh, panel_x + 10, panel_y + 10, buf);
         } else {
             draw_text_2d(ww, hh, panel_x + 10, panel_y + 10, "Click to pick\nObjects will highlight");
