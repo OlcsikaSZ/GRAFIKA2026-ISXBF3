@@ -10,17 +10,22 @@ static GLuint g_help_tex = 0;
 void toggle_help(void) {
     g_show_help = !g_show_help;
     if (g_show_help) {
-        printf("\n=== MUSEUM CONTROLS (F1 to hide) ===\n");
-        printf("WASD: move | Mouse: look\n");
-        printf("B: human mode (walk + eye height)\n");
-        printf("+ / - : light intensity (top row or numpad)\n");
-        printf("H: shadows on/off\n");
-        printf("F11 / Alt+Enter: fullscreen toggle\n");
-        printf("F1: help\n");
-        printf("ESC: quit\n");
-        printf("===================================\n\n");
+        printf(
+            "\n=== VIRTUAL GALLERY CONTROLS (F1 to hide) ===\n"
+            "WASD: move | Mouse: look\n"
+            "LMB: pick object (outline + info)\n"
+            "R: toggle rotation for statues\n"
+            "B: human mode (walk + eye height)\n"
+            "+ / - : light intensity (top row or numpad)\n"
+            "H: shadows on/off\n"
+            "F11 / Alt+Enter: fullscreen toggle\n"
+            "F1: help\n"
+            "ESC: quit\n"
+            "============================================\n\n"
+        );
     }
 }
+
 
 int is_help_visible(void) {
     return g_show_help;
