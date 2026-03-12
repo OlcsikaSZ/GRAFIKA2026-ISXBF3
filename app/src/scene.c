@@ -298,6 +298,57 @@ static void build_shadow_matrix(float out[16], const float plane[4], const float
     out[15] = dot - light[3] * plane[3];
 }
 
+
+static void set_entity_metadata(Entity* e, const char* model_path)
+{
+    if (!e) return;
+
+    // Defaults: use type as a fallback.
+    snprintf(e->display_name, sizeof(e->display_name), "%s", e->type);
+    snprintf(e->description, sizeof(e->description), "Exhibit object");
+
+    const char* mp = model_path ? model_path : "";
+
+    if (strcmp(e->type, "painting") == 0) {
+        snprintf(e->display_name, sizeof(e->display_name), "Painting");
+        snprintf(e->description, sizeof(e->description), "Wall-mounted artwork");
+    } else if (strcmp(e->type, "pedestal") == 0) {
+        snprintf(e->display_name, sizeof(e->display_name), "Pedestal");
+        snprintf(e->description, sizeof(e->description), "Marble stand for exhibits");
+    } else if (strcmp(e->type, "case_base") == 0) {
+        snprintf(e->display_name, sizeof(e->display_name), "Display Base");
+        snprintf(e->description, sizeof(e->description), "Vitrine base (marble)");
+    } else if (strcmp(e->type, "case_glass") == 0) {
+        snprintf(e->display_name, sizeof(e->display_name), "Glass Case");
+        snprintf(e->description, sizeof(e->description), "Transparent cover (glass)");
+    } else if (strcmp(e->type, "duck") == 0) {
+        snprintf(e->display_name, sizeof(e->display_name), "Duck Exhibit");
+        snprintf(e->description, sizeof(e->description), "Textured model in glass case");
+    } else if (strcmp(e->type, "lamp") == 0) {
+        snprintf(e->display_name, sizeof(e->display_name), "Ceiling Lamp");
+        snprintf(e->description, sizeof(e->description), "Main light source");
+    } else if (strcmp(e->type, "statue") == 0) {
+        // Differentiate statues by model filename.
+        if (strstr(mp, "david")) {
+            snprintf(e->display_name, sizeof(e->display_name), "David Statue");
+            snprintf(e->description, sizeof(e->description), "Classic sculpture (rotatable)");
+        } else if (strstr(mp, "statue_classic")) {
+            snprintf(e->display_name, sizeof(e->display_name), "Classic Statue");
+            snprintf(e->description, sizeof(e->description), "Stone exhibit (rotatable)");
+        } else if (strstr(mp, "fairy")) {
+            snprintf(e->display_name, sizeof(e->display_name), "Fairy Statue");
+            snprintf(e->description, sizeof(e->description), "Decorative sculpture");
+        } else if (strstr(mp, "trophy")) {
+            snprintf(e->display_name, sizeof(e->display_name), "Trophy");
+            snprintf(e->description, sizeof(e->description), "Award-style exhibit");
+        } else {
+            snprintf(e->display_name, sizeof(e->display_name), "Statue");
+            snprintf(e->description, sizeof(e->description), "Sculpture exhibit");
+        }
+    }
+}
+
+
 static int entity_casts_shadow(const Entity* e)
 {
     // Don't cast shadows for wall paintings/planes.
@@ -591,6 +642,9 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
         memset(e, 0, sizeof(*e));
 
         strncpy(e->type, rows[i].type, sizeof(e->type) - 1);
+
+        // Fill friendly UI labels for the info panel.
+        set_entity_metadata(e, rows[i].model);
 
         e->px = rows[i].px; e->py = rows[i].py; e->pz = rows[i].pz;
         e->rx = rows[i].rx; e->ry = rows[i].ry; e->rz = rows[i].rz;
