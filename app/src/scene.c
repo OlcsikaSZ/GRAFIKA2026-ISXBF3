@@ -597,11 +597,36 @@ void toggle_animation(Scene* scene)
 
 void destroy_scene(Scene* scene)
 {
+    if (scene == NULL) {
+        return;
+    }
+
     for (int i = 0; i < scene->entity_count; i++) {
         free_model(&scene->entities[i].model);
-        // ha van texture delete függvényed: glDeleteTextures(1, &scene->entities[i].texture_id);
+
+        if (scene->entities[i].texture_id != 0) {
+            glDeleteTextures(1, &scene->entities[i].texture_id);
+            scene->entities[i].texture_id = 0;
+        }
     }
+
+    if (scene->floor_tex != 0) {
+        glDeleteTextures(1, &scene->floor_tex);
+        scene->floor_tex = 0;
+    }
+
+    if (scene->wall_tex != 0) {
+        glDeleteTextures(1, &scene->wall_tex);
+        scene->wall_tex = 0;
+    }
+
+    if (scene->ceiling_tex != 0) {
+        glDeleteTextures(1, &scene->ceiling_tex);
+        scene->ceiling_tex = 0;
+    }
+
     scene->entity_count = 0;
+    scene->selected_entity = -1;
 }
 
 void change_light(Scene* scene, float delta)

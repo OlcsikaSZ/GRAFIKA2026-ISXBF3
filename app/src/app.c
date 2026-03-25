@@ -426,13 +426,23 @@ void render_app(App* app)
 
 void destroy_app(App* app)
 {
+    if (app == NULL) {
+        return;
+    }
+
+    /* Free scene-owned OpenGL resources before deleting the GL context. */
+    destroy_scene(&(app->scene));
+
     if (app->gl_context != NULL) {
         SDL_GL_DeleteContext(app->gl_context);
+        app->gl_context = NULL;
     }
 
     if (app->window != NULL) {
         SDL_DestroyWindow(app->window);
+        app->window = NULL;
     }
 
+    IMG_Quit();
     SDL_Quit();
 }
