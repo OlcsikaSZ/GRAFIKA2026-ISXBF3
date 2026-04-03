@@ -5,6 +5,7 @@
 #include <GL/gl.h>
 
 #include <math.h>
+#include <corecrt_math_defines.h>
 
 double degree_to_radian(double degree)
 {
