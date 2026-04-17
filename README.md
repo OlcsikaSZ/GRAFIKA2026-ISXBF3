@@ -9,28 +9,30 @@ A projekt célja egy esztétikus, interaktív múzeumszoba elkészítése, ahol 
 ## Röviden
 
 A program egy virtuális múzeumtermet jelenít meg, ahol a felhasználó:
-- WASD + egérrel mozoghat first-person nézetben,
-- külső OBJ modelleket tölt be a `scene.csv` konfiguráció alapján,
-- textúrázott falakat, padlót, plafont, festményeket és szobrokat lát,
-- időalapú animációt kapcsolhat a szobrokhoz,
-- futás közben állíthatja a fény intenzitását,
-- egérkattintással kijelölhet objektumokat,
-- a kijelölt objektum stencil outline kiemelést és információs panelt kap,
-- bekapcsolhat egy „Human mode” sétamódot,
-- egyszerű árnyékvetítést és objektum-ütközéskezelést is használhat.
+
+- WASD + egérrel mozoghat first-person nézetben
+- külső OBJ modelleket tölt be a `scene.csv` konfiguráció alapján
+- textúrázott falakat, padlót, plafont, festményeket és szobrokat lát
+- időalapú animációt kapcsolhat a szobrokhoz
+- futás közben állíthatja a fény intenzitását
+- egérkattintással kijelölhet objektumokat
+- a kijelölt objektum stencil outline kiemelést és információs panelt kap
+- bekapcsolhat egy „Human mode” sétamódot
+- egyszerű árnyékvetítést és objektum-ütközéskezelést is használhat
 
 ---
 
 ## Specification
 
-Projekt: **Virtual Gallery – Interactive Museum Room**
+**Projekt:** Virtual Gallery – Interactive Museum Room
 
-Leírás:
+**Leírás:**  
 A program egy bejárható, virtuális múzeumtermet jelenít meg. A felhasználó billentyűzettel és egérrel mozog a térben first-person kamerával. A teremben több, fájlból betöltött 3D modell található, valamint textúrázott felületek és festmények. A megvilágítás intenzitása futás közben állítható.
 
 A program interaktív: az egérrel objektumok jelölhetők ki (picking), a kijelölt elem stencil outline kiemelést kap, és a képernyőn egy rövid információs panel jelenik meg róla. A mozgás két módban használható: szabad mozgás és emberi szemmagasságú sétamód.
 
 ### Kötelező elemek
+
 - Kamera bejárás: egér + WASD
 - Modellek: külső fájlból (OBJ)
 - Animáció: időalapú forgás
@@ -39,6 +41,7 @@ A program interaktív: az egérrel objektumok jelölhetők ki (picking), a kijel
 - F1: súgó overlay / használati útmutató
 
 ### Megvalósított plusz funkciók
+
 - Picking egérkattintással
 - Stencil buffer alapú outline kiemelés a kijelölt objektumon
 - Human mode / járás jellegű mozgás szemmagassággal
@@ -52,6 +55,7 @@ A program interaktív: az egérrel objektumok jelölhetők ki (picking), a kijel
 ## Jelenlegi állapot
 
 A programban jelenleg működik:
+
 - FPS kamera: WASD + jobb egérgombbal körbenézés
 - Szabad mozgás: Q / E fel-le mozgás
 - Human mode (emberi szemmagasság + járásérzet): `B`
@@ -74,25 +78,30 @@ A programban jelenleg működik:
 ## Irányítás (Controls)
 
 ### Mozgás / kamera
+
 - `W` / `S` – előre / hátra
 - `A` / `D` – balra / jobbra
 - jobb egérgomb nyomva tartva + egérmozgatás – körbenézés
 - `Q` / `E` – fel / le (csak szabad mozgásban)
 
 ### Módváltás és effektek
+
 - `B` – Human mode be/ki
 - `R` – animáció be/ki
 - `H` – árnyékok be/ki
 - `F11` vagy `Alt+Enter` – teljes képernyő be/ki
 
 ### Interakció
+
 - bal kattintás – picking / objektumkijelölés
 
 ### Fény
+
 - numpad `+` vagy fő billentyűzeti `+` – fényintenzitás növelése
 - numpad `-` vagy fő billentyűzeti `-` – fényintenzitás csökkentése
 
 ### Egyéb
+
 - `F1` – súgó / controls overlay
 - `ESC` – kilépés
 
@@ -106,6 +115,18 @@ A projekt futtatásához szükséges asset fájlok külön tölthetők le az al�
 
 A letöltött tömörített állományt ki kell csomagolni, majd az `assets` mappát az `app/` könyvtárba kell helyezni.
 
+Az elvárt struktúra:
+
+```text
+app/
+  assets/
+    config/
+    models/
+    textures/
+```
+
+---
+
 ## Mappaszerkezet
 
 ```text
@@ -114,25 +135,32 @@ app/
   src/
     app.c
     camera.c
-    scene.c
     csv.c
-    texture.c
     help.c
-    utils.c
     main.c
+    scene_core.c
+    scene_loader.c
+    scene_render.c
+    scene_interaction.c
+    scene_internal.h
+    texture.c
+    utils.c
   include/
-    (header fájlok)
-  assets/
-    config/
-      scene.csv
-    models/
-      (OBJ modellek)
-    textures/
-      (textúrák)
-  ext/
+    app.h
+    camera.h
+    csv.h
+    help.h
+    scene.h
+    texture.h
+    utils.h
     obj/
-      include/obj/...
-      src/...
+      draw.h
+      info.h
+      load.h
+      model.h
+      transform.h
+  lib/
+    libobj.a
 demos/
   (órai gyakorlati feladatok)
 ```
@@ -142,12 +170,15 @@ demos/
 ## Scene konfiguráció (`scene.csv`)
 
 A jelenlegi terem tartalma itt van definiálva:
+
 - `app/assets/config/scene.csv`
 
 Formátum:
+
 - `type,model,texture,px,py,pz,rx,ry,rz,sx,sy,sz`
 
-Megjegyzés:
+Megjegyzések:
+
 - `type=statue` esetén az objektum animálható
 - a `texture` mező alapján történik a textúrázás
 
@@ -155,24 +186,27 @@ Megjegyzés:
 
 ## Fordítás és futtatás
 
-Windows (MinGW + SDL2 / kurzus SDK)
+**Windows (MinGW + SDL2 / kurzus SDK)**
 
 Fordítás az `app/` mappában:
+
 ```bash
 make
 ```
 
 Futtatás:
+
 ```bash
 ./museum.exe
 ```
 
 Takarítás:
+
 ```bash
 make clean
 ```
 
-Megjegyzés: a projekt a kurzus SDL2 / SDL2_image környezetéhez igazodik.
+Megjegyzés: a projekt a kurzus SDL2 / SDL2_image környezetéhez igazodik. Az OBJ modellbetöltés külön statikus könyvtárként van belinkelve, ezért a fordításhoz nincs szükség külön `ext` forrásmappára.
 
 ---
 
@@ -180,11 +214,23 @@ Megjegyzés: a projekt a kurzus SDL2 / SDL2_image környezetéhez igazodik.
 
 - Kamera és mozgás: `app/src/camera.c`
 - Alkalmazáslogika és eseménykezelés: `app/src/app.c`
-- Scene betöltés: `app/src/csv.c` + `app/src/scene.c`
-- OBJ modellbetöltés és rajzolás: `app/ext/obj`
+- CSV beolvasás: `app/src/csv.c`
+- Scene betöltés: `app/src/scene_loader.c`
+- Scene állapotkezelés és animáció: `app/src/scene_core.c`
+- Renderelés, világítás, árnyék és outline: `app/src/scene_render.c`
+- Picking és ütközéskezelés: `app/src/scene_interaction.c`
+- OBJ modellbetöltés és rajzolás: külön statikus könyvtárként linkelt OBJ loader (`app/lib/libobj.a`)
 - Textúrázás: `app/src/texture.c`
 - Help / overlay: `app/src/help.c`
-- Egyszerű ütközéskezelés és picking: `app/src/scene.c`
+
+---
+
+## Megjegyzés a külső függőségről
+
+A projekt az OBJ modellek betöltéséhez egy külön statikus könyvtárat használ.  
+A könyvtár publikus fejlécfájljai az `app/include/obj/`, a lefordított statikus állomány pedig az `app/lib/libobj.a` útvonalon található.
+
+Ez a megoldás lehetővé teszi, hogy a projekt külső forrásmappa (`ext`) nélkül is tisztán, átláthatóan és változatlan működéssel fordítható maradjon.
 
 ---
 

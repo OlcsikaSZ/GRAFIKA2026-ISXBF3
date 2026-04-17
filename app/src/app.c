@@ -22,7 +22,6 @@ void init_app(App* app, int width, int height)
         return;
     }
 
-    /* Request a stencil buffer for stencil-outline highlighting. */
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
     app->is_fullscreen = false;
@@ -80,7 +79,6 @@ void init_opengl()
     glEnable(GL_NORMALIZE);
     glEnable(GL_AUTO_NORMAL);
 
-    // glClearColor(0.1, 0.1, 0.1, 1.0);
     glClearColor(1, 1, 1, 1);
 
     glMatrixMode(GL_MODELVIEW);
@@ -90,14 +88,8 @@ void init_opengl()
 
     glClearDepth(1.0);
 
-    // glEnable(GL_TEXTURE_2D);
 
-    // glEnable(GL_COLOR_MATERIAL);
 
-    // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    // glEnable(GL_FOG);
-    // float fog_color[] = {1, 0.3, 0.8, 1};
-    // glFogfv(GL_FOG_COLOR, fog_color);
     glDisable(GL_FOG);
 
     glEnable(GL_TEXTURE_2D);
@@ -130,7 +122,6 @@ static void reshape(App* app, GLsizei width, GLsizei height)
     if (drawable_w <= 0) drawable_w = 1;
     if (drawable_h <= 0) drawable_h = 1;
 
-    /* Fill the whole framebuffer. No letterboxing in fullscreen or resized window. */
     glViewport(0, 0, drawable_w, drawable_h);
 
     if (app) {
@@ -144,7 +135,6 @@ static void reshape(App* app, GLsizei width, GLsizei height)
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     {
-        /* Keep vertical FOV stable; adapt horizontally to the current aspect. */
         const double human = app && app->camera.walk_bob_enabled;
         const double half_h = human ? 0.045 : 0.060;
         const double aspect = (double)drawable_w / (double)drawable_h;
@@ -156,7 +146,7 @@ static void reshape(App* app, GLsizei width, GLsizei height)
 void handle_app_events(App* app)
 {
     SDL_Event event;
-    static bool is_mouse_down = false; // right button (mouse-look)
+    static bool is_mouse_down = false;
     static bool left_down = false;
     static int left_down_x = 0;
     static int left_down_y = 0;
@@ -176,7 +166,6 @@ void handle_app_events(App* app)
                 app->is_running = false;
                 break;
             case SDL_SCANCODE_RETURN:
-                /* Classic Alt+Enter fullscreen toggle */
                 if ((event.key.keysym.mod & KMOD_ALT) != 0) {
                     toggle_fullscreen(app);
                 }
@@ -194,13 +183,11 @@ void handle_app_events(App* app)
                 set_camera_side_speed(&(app->camera), -1);
                 break;
             case SDL_SCANCODE_Q:
-                // "Séta" módban ne lehessen repülni
                 if (!app->camera.walk_bob_enabled) {
                     set_camera_vertical_speed(&(app->camera), 1);
                 }
                 break;
             case SDL_SCANCODE_E:
-                // "Séta" módban ne lehessen repülni
                 if (!app->camera.walk_bob_enabled) {
                     set_camera_vertical_speed(&(app->camera), -1);
                 }
@@ -209,19 +196,14 @@ void handle_app_events(App* app)
                 toggle_help();
                 break;
             case SDL_SCANCODE_R:
-                // Statue forgás indítás/megállítás
                 toggle_animation(&(app->scene));
                 break;
             case SDL_SCANCODE_H:
-                // Shadows on/off
                 toggle_shadows(&(app->scene));
                 break;
             case SDL_SCANCODE_B:
-                // Walking head-bob (járás érzet)
                 toggle_walk_bob(&(app->camera));
-                // kapcsoláskor biztosan állítsuk le a vertikális mozgást
                 set_camera_vertical_speed(&(app->camera), 0);
-                // FOV frissítés (ember mód szűkebb)
                 reshape(app, app->window_w, app->window_h);
                 break;
             case SDL_SCANCODE_KP_PLUS:
@@ -287,12 +269,10 @@ void handle_app_events(App* app)
                         (int)((double)event.button.y * (double)app->viewport_h / (double)app->window_h),
                         app->viewport_x, app->viewport_y, app->viewport_w, app->viewport_h);
 
-                    // Convenience: clicking the statue toggles animation
                     if (idx >= 0 && strcmp(app->scene.entities[idx].type, "statue") == 0) {
                         toggle_animation(&(app->scene));
                     }
 
-                    // Also reflect selection in the window title (handy + obvious for demo).
                     if (idx >= 0) {
                         char title[128];
                         snprintf(title, sizeof(title), "Virtual Gallery – Interactive Museum Room | Selected: %s (#%d)",
@@ -308,7 +288,6 @@ void handle_app_events(App* app)
             app->is_running = false;
             break;
         case SDL_WINDOWEVENT:
-            /* Keep aspect-correct viewport on resize and after fullscreen switch. */
             if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
                 event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                 reshape(app, (GLsizei)event.window.data1, (GLsizei)event.window.data2);
@@ -327,11 +306,9 @@ static void toggle_fullscreen(App* app)
     }
 
     if (!app->is_fullscreen) {
-        /* Save the current windowed position/size so we can restore it. */
         SDL_GetWindowPosition(app->window, &app->windowed_x, &app->windowed_y);
         SDL_GetWindowSize(app->window, &app->windowed_w, &app->windowed_h);
 
-        /* Borderless fullscreen that matches the desktop resolution. */
         if (SDL_SetWindowFullscreen(app->window, SDL_WINDOW_FULLSCREEN_DESKTOP) == 0) {
             app->is_fullscreen = true;
         } else {
@@ -347,12 +324,10 @@ static void toggle_fullscreen(App* app)
         }
     }
 
-    /* Refresh viewport after the size changes. */
     {
         int w = 0, h = 0;
         SDL_GetWindowSize(app->window, &w, &h);
 
-        /* Some Windows drivers require re-binding the context after mode switch. */
         SDL_GL_MakeCurrent(app->window, app->gl_context);
 
         reshape(app, (GLsizei)w, (GLsizei)h);
@@ -369,7 +344,7 @@ void update_app(App* app)
     app->uptime = current_time;
 
     update_camera(&(app->camera), elapsed_time);
-    // Prevent walking through exhibits (pedestals, statues, ducks, etc.).
+    /* Prevent walking through scene objects. */
     resolve_camera_collisions(&(app->scene), &(app->camera));
     update_scene(&(app->scene), elapsed_time);
 }
@@ -397,13 +372,13 @@ void render_app(App* app)
         draw_help_overlay(w, h);
     }
 
-    // Picking info panel (bottom-left). Make it readable + a bit more helpful.
+    /* Bottom-left picking info panel. */
     {
         int ww = 0, hh = 0;
         SDL_GetWindowSize(app->window, &ww, &hh);
 
         const int panel_x = 12;
-        const int panel_y = hh - 72;   // top-left style
+        const int panel_y = hh - 72;
         const int panel_w = 340;
         const int panel_h = 58;
 
@@ -430,7 +405,6 @@ void destroy_app(App* app)
         return;
     }
 
-    /* Free scene-owned OpenGL resources before deleting the GL context. */
     destroy_scene(&(app->scene));
 
     if (app->gl_context != NULL) {

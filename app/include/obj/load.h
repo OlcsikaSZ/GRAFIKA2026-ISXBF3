@@ -40,11 +40,10 @@ int read_texture_vertex(TextureVertex* texture_vertex, const char* text);
  */
 int read_normal(Vertex* normal, const char* text);
 
-/*
- * NOTE:
- * The loader triangulates polygon faces internally.
- * (Triangle-only face parsing is no longer exposed.)
+/**
+ * Read triangle data.
  */
+int read_triangle(Triangle* triangle, const char* text);
 
 /**
  * Check that the character is a numeric character.

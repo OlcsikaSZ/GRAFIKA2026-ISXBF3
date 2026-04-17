@@ -14,7 +14,6 @@ typedef struct Entity
 {
     char type[32];
 
-    // Friendly UI metadata (filled from scene.csv type/model)
     char display_name[64];
     char description[128];
 
@@ -25,10 +24,8 @@ typedef struct Entity
     float rx, ry, rz;
     float sx, sy, sz;
 
-    int animated; // 1 = forog
+    int animated;
 
-    // Animáció állapot (fok). Azért tároljuk külön, hogy pause/resume után
-    // ugyanonnan folytassa, és ne ugorjon "időből számolt" szögre.
     float anim_angle_deg;
 
     /* Local-space bounding sphere for picking */
@@ -60,16 +57,13 @@ typedef struct Scene
 
     float light_intensity;
 
-    // idő alapú animhoz: eltelt idő (összegzett)
     double time_sec;
 
-    // Animáció kapcsoló (pl. szobor forgatás indítás/megállítás)
     int animation_enabled;
 
     GLuint floor_tex;
     GLuint wall_tex;
     GLuint ceiling_tex;
-    // Festmények is Entity-ként jönnek a scene.csv-ből.
 
     /* Picking */
     int selected_entity;
@@ -89,7 +83,6 @@ void change_light(Scene* scene, float delta);
 void update_scene(Scene* scene, double elapsed_time);
 void render_scene(const Scene* scene);
 
-// Egyszerű animáció kapcsoló (pl. statue forgás)
 void toggle_animation(Scene* scene);
 
 /* Toggle simple projected shadows (planar). */

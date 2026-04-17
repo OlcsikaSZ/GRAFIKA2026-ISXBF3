@@ -17,7 +17,6 @@ int load_scene_csv(const char* path, SceneRow* out_rows, size_t max_rows, size_t
     char line[1024];
     size_t count = 0;
 
-    // header line
     if (!fgets(line, sizeof(line), f)) { fclose(f); return 0; }
 
     while (fgets(line, sizeof(line), f)) {
@@ -27,7 +26,6 @@ int load_scene_csv(const char* path, SceneRow* out_rows, size_t max_rows, size_t
         SceneRow r;
         memset(&r, 0, sizeof(r));
 
-        // type,model,texture,px,py,pz,rx,ry,rz,sx,sy,sz
         int ok = sscanf(line,
             " %31[^,],%255[^,],%255[^,],%f,%f,%f,%f,%f,%f,%f,%f,%f",
             r.type, r.model, r.texture,
