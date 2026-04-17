@@ -153,10 +153,14 @@ app/
     scene.h
     texture.h
     utils.h
-  ext/
     obj/
-      include/obj/...
-      src/...
+      draw.h
+      info.h
+      load.h
+      model.h
+      transform.h
+  lib/
+    libobj.a
 demos/
   (órai gyakorlati feladatok)
 ```
@@ -202,7 +206,7 @@ Takarítás:
 make clean
 ```
 
-Megjegyzés: a projekt a kurzus SDL2 / SDL2_image környezetéhez igazodik.
+Megjegyzés: a projekt a kurzus SDL2 / SDL2_image környezetéhez igazodik. Az OBJ modellbetöltés külön statikus könyvtárként van belinkelve, ezért a fordításhoz nincs szükség külön `ext` forrásmappára.
 
 ---
 
@@ -215,7 +219,7 @@ Megjegyzés: a projekt a kurzus SDL2 / SDL2_image környezetéhez igazodik.
 - Scene állapotkezelés és animáció: `app/src/scene_core.c`
 - Renderelés, világítás, árnyék és outline: `app/src/scene_render.c`
 - Picking és ütközéskezelés: `app/src/scene_interaction.c`
-- OBJ modellbetöltés és rajzolás: `app/ext/obj`
+- OBJ modellbetöltés és rajzolás: külön statikus könyvtárként linkelt OBJ loader (`app/lib/libobj.a`)
 - Textúrázás: `app/src/texture.c`
 - Help / overlay: `app/src/help.c`
 
@@ -223,7 +227,10 @@ Megjegyzés: a projekt a kurzus SDL2 / SDL2_image környezetéhez igazodik.
 
 ## Megjegyzés a külső függőségről
 
-Az `app/ext/obj` könyvtár egy külső OBJ modellbetöltő komponenst tartalmaz, amelyet a projekt a modellek beolvasására és kirajzolására használ.
+A projekt az OBJ modellek betöltéséhez egy külön statikus könyvtárat használ.  
+A könyvtár publikus fejlécfájljai az `app/include/obj/`, a lefordított statikus állomány pedig az `app/lib/libobj.a` útvonalon található.
+
+Ez a megoldás lehetővé teszi, hogy a projekt külső forrásmappa (`ext`) nélkül is tisztán, átláthatóan és változatlan működéssel fordítható maradjon.
 
 ---
 
