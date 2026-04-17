@@ -98,6 +98,14 @@ A programban jelenleg működik:
 
 ---
 
+## Assets letöltése
+
+A projekt futtatásához szükséges asset fájlok külön tölthetők le az alábbi linkről:
+
+[assets letöltése](https://drive.google.com/file/d/1AeH_jTJDYPZ5ZZdX1aJNZqibNsWDsM5T/view?usp=drive_link)
+
+A letöltött tömörített állományt ki kell csomagolni, majd az `assets` mappát az `app/` könyvtárba kell helyezni.
+
 ## Mappaszerkezet
 
 ```text
