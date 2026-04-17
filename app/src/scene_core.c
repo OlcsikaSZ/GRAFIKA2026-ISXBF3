@@ -49,28 +49,11 @@ void compute_model_bounds(const Model* m,
 }
 
 
-// Z-up világ: X=bal/jobb, Y=előre/hátra, Z=felfelé (összhangban camera.c-vel)
-// A korábbi verzió falait forgatásokkal rajzoltuk. Az gyakorlatban néha "lyukas szobát"
-// eredményezett (egyes falak a kamera szögétől függően eltűntek / belógtak).
-// Itt direkt világ-koordinátás quadokat rajzolunk: így determinisztikus, mindig zárt szoba.
-static void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex);
-
-// "Corridor" room dimensions (must match camera.c clamp + shadow planes).
-#define ROOM_W 10.0f
-#define ROOM_L 26.0f
-#define ROOM_H 4.0f
-
-// DEBUG rajzok (tengely + kis háromszög) — alapból kikapcsoljuk.
-// Ha kell, fordításkor add hozzá: -DSHOW_DEBUG_AXES
-#ifdef SHOW_DEBUG_AXES
-static void draw_debug_axes_and_marker(void);
-#endif
 
 void set_entity_metadata(Entity* e, const char* model_path)
 {
     if (!e) return;
 
-    // Defaults: use type as a fallback.
     snprintf(e->display_name, sizeof(e->display_name), "%s", e->type);
     snprintf(e->description, sizeof(e->description), "Exhibit object");
 
@@ -95,7 +78,6 @@ void set_entity_metadata(Entity* e, const char* model_path)
         snprintf(e->display_name, sizeof(e->display_name), "Ceiling Lamp");
         snprintf(e->description, sizeof(e->description), "Main light source");
     } else if (strcmp(e->type, "statue") == 0) {
-        // Differentiate statues by model filename.
         if (strstr(mp, "david")) {
             snprintf(e->display_name, sizeof(e->display_name), "David Statue");
             snprintf(e->description, sizeof(e->description), "Classic sculpture (rotatable)");
@@ -143,7 +125,6 @@ void init_scene(Scene* scene)
     scene->selected_entity = -1;
     scene->shadows_enabled = 1;
 
-    // anyag (maradhat MVP-ben közös mindenkire)
     scene->material.ambient.red = 0.0f;
     scene->material.ambient.green = 0.0f;
     scene->material.ambient.blue = 0.0f;
@@ -159,10 +140,8 @@ void init_scene(Scene* scene)
     scene->material.shininess = 100.0;
 
     scene->floor_tex = load_texture("assets/textures/floor.jpg");
-    // Use JPG textures to avoid libpng DLL issues on some MinGW/SDL2_image setups.
     scene->wall_tex  = load_texture("assets/textures/wall.jpg");
     scene->ceiling_tex = load_texture("assets/textures/ceiling.jpg");
-    // Festmények már a scene.csv-ből jönnek (plane.obj + painting*.jpg)
 }
 
 void toggle_shadows(Scene* scene)
@@ -224,17 +203,13 @@ void update_scene(Scene* scene, double elapsed_time)
 {
     scene->time_sec += elapsed_time;
 
-    // időalapú anim: statue forog
     if (scene->animation_enabled) {
         for (int i = 0; i < scene->entity_count; i++) {
             Entity* e = &scene->entities[i];
             if (e->animated) {
-                e->anim_angle_deg += (float)(elapsed_time * 20.0); // 20 deg/sec
-                // wrap
+                e->anim_angle_deg += (float)(elapsed_time * 20.0);
                 if (e->anim_angle_deg > 360.0f) e->anim_angle_deg -= 360.0f;
                 if (e->anim_angle_deg < 0.0f)   e->anim_angle_deg += 360.0f;
-                // Z-up world: yaw around the UP axis (Z rotation in apply_transform order)
-                // so the statue rotates "on the pedestal" instead of tumbling.
                 e->rz = e->anim_angle_deg;
             }
         }

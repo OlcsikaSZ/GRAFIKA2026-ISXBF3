@@ -7,9 +7,7 @@
 void init_camera(Camera* camera)
 {
     camera->position.x = 0.0;
-    // Start at the beginning of the corridor, looking forward (along +Y).
     camera->position.y = -12.0;
-    // Kényelmes "szemmagasság" Z-up világban
     camera->position.z = 1.70;
     camera->rotation.x = 0.0;
     camera->rotation.y = 0.0;
@@ -28,7 +26,6 @@ void init_camera(Camera* camera)
 void toggle_walk_bob(Camera* camera)
 {
     camera->walk_bob_enabled = !camera->walk_bob_enabled;
-    // 'Ember mód': állítsuk be a szemmagasságot, és onnantól ne engedjünk repülni.
     if (camera->walk_bob_enabled) {
         const double eye = 1.75;
         camera->position.z = eye;
@@ -38,14 +35,12 @@ void toggle_walk_bob(Camera* camera)
     camera->bob_offset = 0.0;
 }
 
-// Egyszerű szobahatár (AABB) — MVP ütközés / falon átmenés tiltás
-// Fontos: ez a scene.c-ben rajzolt szoba méreteivel van összhangban.
+/* Clamp camera to room bounds. */
 void clamp_camera_to_room(Camera* camera)
 {
-    // Must match scene.c (ROOM_W / ROOM_L / ROOM_H).
-    const double half_w = 5.0;   // ROOM_W = 10.0
-    const double half_l = 13.0;  // ROOM_L = 26.0
-    const double wall_pad  = 0.25;  // ennyire maradjunk a faltól, hogy ne vágjon a near plane
+    const double half_w = 5.0;
+    const double half_l = 13.0;
+    const double wall_pad  = 0.25;
     const double min_x = -half_w + wall_pad;
     const double max_x =  half_w - wall_pad;
     const double min_y = -half_l + wall_pad;
@@ -56,11 +51,8 @@ void clamp_camera_to_room(Camera* camera)
     if (camera->position.y < min_y) camera->position.y = min_y;
     if (camera->position.y > max_y) camera->position.y = max_y;
 
-    // Ne essünk a padló alá, és ne menjünk bele a plafonba.
-    // Fontos: fly módban SE tudjunk átrepülni a padlón/plafonon.
-    // "Ember" módban a padló minimuma magasabb (szemmagasság-érzet).
     const double floor_z_min = camera->walk_bob_enabled ? 1.55 : 0.25;
-    const double ceil_z_max  = 4.0 - 0.30; // ROOM_H = 4.0
+    const double ceil_z_max  = 4.0 - 0.30;
 
     if (camera->position.z < floor_z_min) camera->position.z = floor_z_min;
     if (camera->position.z > ceil_z_max)  camera->position.z = ceil_z_max;
@@ -78,21 +70,18 @@ void update_camera(Camera* camera, double time)
     camera->position.y += sin(angle) * camera->speed.y * time;
     camera->position.x += cos(side_angle) * camera->speed.x * time;
     camera->position.y += sin(side_angle) * camera->speed.x * time;
-    // Séta módban ne legyen vertikális mozgás (ne repüljünk).
     if (!camera->walk_bob_enabled) {
         camera->position.z += camera->speed.z * time;
     }
 
     clamp_camera_to_room(camera);
 
-    // Walking head-bob (kizárólag vizuális, collision nem érintett)
-    // Ha mozogsz X/Y-ban, akkor enyhe bólogatás.
+    /* Walking head-bob effect. */
     if (camera->walk_bob_enabled) {
         const double move_mag = fabs(camera->speed.x) + fabs(camera->speed.y);
         if (move_mag > 0.001) {
-            // freki a mozgással arányos (kellemesebb érzet)
-            const double freq = 6.0;      // rad/sec (kevésbé "ráz")
-            const double amp  = 0.010;    // méter
+            const double freq = 6.0;
+            const double amp  = 0.010;
             camera->walk_phase += time * freq;
             camera->bob_offset = sin(camera->walk_phase) * amp;
         } else {

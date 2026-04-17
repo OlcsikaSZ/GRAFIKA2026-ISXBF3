@@ -3,7 +3,6 @@
 int is_entity_collidable(const Entity* e)
 {
     if (e == NULL) return 0;
-    // Don't collide with flat wall paintings or ceiling lamp.
     if (strcmp(e->type, "painting") == 0) return 0;
     if (strcmp(e->type, "lamp") == 0) return 0;
     return 1;
@@ -13,13 +12,9 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
 {
     if (scene == NULL || camera == NULL) return;
 
-    // Camera capsule approximation (upright cylinder):
-    // - X/Y: circle (radius tuned to match the wall clamp feel)
-    // - Z: overlap test against entity vertical interval
-    // IMPORTANT: wall clamp uses wall_pad = 0.25 in camera.c. To get the same
-    // "as close as the wall" feel, we keep a similar radius here.
+    /* Approximate the camera as a vertical capsule. */
     const float cam_r = 0.25f;
-    const float cam_h = 1.70f; // approximate body height (eye is at ~1.7m)
+    const float cam_h = 1.70f;
 
     const float cam_z_max = (float)camera->position.z;
     const float cam_z_min = cam_z_max - cam_h;
@@ -28,31 +23,24 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
         const Entity* e = &scene->entities[i];
         if (!is_entity_collidable(e)) continue;
 
-        // World-space vertical interval of the entity.
-        // Note: apply_transform() uses translate(pz + ground_offset_z) and then scale(sz).
         const float base_z = e->pz + e->ground_offset_z;
         const float e_z_min = base_z + e->bounds_min_z_local * e->sz;
         const float e_z_max = base_z + e->bounds_max_z_local * e->sz;
 
-        // If there's no vertical overlap, ignore.
         if (e_z_max < cam_z_min || e_z_min > cam_z_max) {
             continue;
         }
 
-        // --- Horizontal collision: circle (camera) vs oriented rectangle (entity XY AABB + yaw) ---
-        // We compute an OBB in XY from the model's local AABB, scale, and entity yaw (rz).
+        /* Horizontal collision: circle vs. oriented rectangle. */
 
-        // Local AABB center and half extents.
         const float local_cx = (e->bounds_min_x_local + e->bounds_max_x_local) * 0.5f;
         const float local_cy = (e->bounds_min_y_local + e->bounds_max_y_local) * 0.5f;
         const float half_x = (e->bounds_max_x_local - e->bounds_min_x_local) * 0.5f * e->sx;
         const float half_y = (e->bounds_max_y_local - e->bounds_min_y_local) * 0.5f * e->sy;
 
-        // World center of the box.
         const float box_cx = e->px + local_cx * e->sx;
         const float box_cy = e->py + local_cy * e->sy;
 
-        // Camera point in box space.
         const float px = (float)camera->position.x - box_cx;
         const float py = (float)camera->position.y - box_cy;
 
@@ -60,11 +48,9 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
         const float ca = cosf(a);
         const float sa = sinf(a);
 
-        // Rotate by -a (inverse) to go into box local axes.
         const float lx =  ca * px + sa * py;
         const float ly = -sa * px + ca * py;
 
-        // Closest point on (axis-aligned) rectangle in box space.
         float qx = lx;
         float qy = ly;
         if (qx < -half_x) qx = -half_x;
@@ -77,7 +63,6 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
         float d2 = dx*dx + dy*dy;
 
         if (d2 < cam_r * cam_r) {
-            // If we're exactly inside (dx==dy==0), push out along the shallowest axis.
             float push_lx = 0.0f;
             float push_ly = 0.0f;
 
@@ -95,12 +80,11 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
                 const float d = sqrtf(d2);
                 const float nx = dx / d;
                 const float ny = dy / d;
-                const float push = (cam_r - d) + 0.0001f; // tiny epsilon
+                const float push = (cam_r - d) + 0.0001f;
                 push_lx = nx * push;
                 push_ly = ny * push;
             }
 
-            // Rotate push vector back to world space (+a).
             const float wx = ca * push_lx - sa * push_ly;
             const float wy = sa * push_lx + ca * push_ly;
             camera->position.x += wx;
@@ -108,13 +92,11 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
         }
     }
 
-    // After pushing out of objects, ensure we still stay within the room.
     clamp_camera_to_room(camera);
 }
 
 int invert_matrix_4x4(const double m[16], double inv_out[16])
 {
-    // Adapted from the classic GLU inversion snippet (public domain style).
     double inv[16];
 
     inv[0] = m[5]  * m[10] * m[15] -
@@ -241,7 +223,6 @@ int invert_matrix_4x4(const double m[16], double inv_out[16])
 
 void mult_mat4_vec4(const double m[16], const double v[4], double out[4])
 {
-    // Column-major OpenGL matrix
     out[0] = m[0]*v[0] + m[4]*v[1] + m[8]*v[2]  + m[12]*v[3];
     out[1] = m[1]*v[0] + m[5]*v[1] + m[9]*v[2]  + m[13]*v[3];
     out[2] = m[2]*v[0] + m[6]*v[1] + m[10]*v[2] + m[14]*v[3];
@@ -250,7 +231,6 @@ void mult_mat4_vec4(const double m[16], const double v[4], double out[4])
 
 void mult_mat4_mat4(const double a[16], const double b[16], double out[16])
 {
-    // out = a*b (column-major)
     for (int col = 0; col < 4; col++) {
         for (int row = 0; row < 4; row++) {
             out[col*4 + row] =
@@ -277,7 +257,6 @@ void vec3_norm(double v[3])
 
 void rotate_point_xyz_deg(double p[3], float rx, float ry, float rz)
 {
-    // Apply the same rotation order as apply_transform(): X then Y then Z
     const double x0 = p[0], y0 = p[1], z0 = p[2];
     double x = x0, y = y0, z = z0;
 
@@ -285,21 +264,18 @@ void rotate_point_xyz_deg(double p[3], float rx, float ry, float rz)
     const double ay = degree_to_radian(ry);
     const double az = degree_to_radian(rz);
 
-    // X
     {
         const double cy = cos(ax), sy = sin(ax);
         const double y1 = y*cy - z*sy;
         const double z1 = y*sy + z*cy;
         y = y1; z = z1;
     }
-    // Y
     {
         const double cx = cos(ay), sx = sin(ay);
         const double x1 = x*cx + z*sx;
         const double z1 = -x*sx + z*cx;
         x = x1; z = z1;
     }
-    // Z
     {
         const double cz = cos(az), sz = sin(az);
         const double x1 = x*cz - y*sz;
@@ -336,14 +312,12 @@ int pick_entity(Scene* scene, const Camera* camera,
     if (!scene || !camera) return -1;
     if (viewport_w <= 0 || viewport_h <= 0) return -1;
 
-    // Ignore clicks outside the viewport
     if (mouse_x < viewport_x || mouse_x >= viewport_x + viewport_w ||
         mouse_y < viewport_y || mouse_y >= viewport_y + viewport_h) {
         scene->selected_entity = -1;
         return -1;
     }
 
-    // Recreate the same projection+view matrices used for rendering
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -373,7 +347,6 @@ int pick_entity(Scene* scene, const Camera* camera,
         return -1;
     }
 
-    // NDC coordinates
     const double x_ndc = (2.0 * (double)(mouse_x - viewport_x) / (double)viewport_w) - 1.0;
     const double y_ndc = 1.0 - (2.0 * (double)(mouse_y - viewport_y) / (double)viewport_h);
 
@@ -405,7 +378,6 @@ int pick_entity(Scene* scene, const Camera* camera,
     for (int i = 0; i < scene->entity_count; i++) {
         const Entity* e = &scene->entities[i];
 
-        // world center = T + R * (S * local_center)
         double c_local[3] = { e->bounds_center_local.x, e->bounds_center_local.y, e->bounds_center_local.z };
         c_local[0] *= e->sx; c_local[1] *= e->sy; c_local[2] *= e->sz;
         rotate_point_xyz_deg(c_local, e->rx, e->ry, e->rz);

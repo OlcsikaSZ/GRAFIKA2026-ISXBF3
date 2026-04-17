@@ -15,11 +15,9 @@ typedef struct Camera
     vec3 speed;
     bool is_preview_visible;
 
-    // "Walking" hatás (fej-bólogatás) – opcionális, külön állapotban tároljuk,
-    // hogy az ütközés/klamp a valódi pozícióval számoljon.
     bool walk_bob_enabled;
     double walk_phase;
-    double bob_offset;   // aktuális függőleges offset
+    double bob_offset;
 } Camera;
 
 /**

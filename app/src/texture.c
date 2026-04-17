@@ -12,7 +12,6 @@ GLuint load_texture(char* filename)
         return 0;
     }
 
-    // Biztos RGBA formátum (stabil minden jpg/png esetén)
     SDL_Surface* surface = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_RGBA32, 0);
     SDL_FreeSurface(loaded);
 

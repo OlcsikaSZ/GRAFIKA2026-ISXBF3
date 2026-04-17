@@ -37,12 +37,10 @@ typedef struct Material
  */
 double degree_to_radian(double degree);
 
-// Minimal 8x8 bitmap text overlay (no extra deps like SDL_ttf).
-// Coordinates are in pixels from the bottom-left corner.
+/* Minimal bitmap text overlay. */
 void draw_text_2d(int window_w, int window_h, int x_px, int y_px, const char* text);
 
-// Simple filled rectangle in screen space.
-// Coordinates are in pixels from the bottom-left corner.
+/* Simple filled rectangle in screen space. */
 void draw_filled_rect_2d(int window_w, int window_h,
                          int x_px, int y_px, int w_px, int h_px,
                          float r, float g, float b, float a);

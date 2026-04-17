@@ -34,13 +34,11 @@ int is_help_visible(void) {
 void draw_help_overlay(int w, int h) {
     if (!g_show_help) return;
 
-    // Lazy-load help texture
     if (g_help_tex == 0) {
-        // Use JPG to avoid libpng DLL issues on some systems.
         g_help_tex = load_texture("assets/textures/help.jpg");
     }
 
-    // 2D overlay: orthographic projection, centered panel
+    /* Draw centered 2D help overlay. */
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TRANSFORM_BIT);
 
     glDisable(GL_LIGHTING);
@@ -58,7 +56,6 @@ void draw_help_overlay(int w, int h) {
     glPushMatrix();
     glLoadIdentity();
 
-    // Keep aspect ratio (~4:3). Occupy ~80% of the window.
     const float target_w = w * 0.82f;
     const float target_h = target_w * (768.0f / 1024.0f);
     float panel_w = target_w;
