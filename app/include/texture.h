@@ -5,9 +5,7 @@
 
 typedef GLubyte Pixel[3];
 
-/**
- * Load texture from file and returns with the texture name.
- */
+// Load a texture from file and return its OpenGL id.
 GLuint load_texture(char* filename);
 
 #endif /* TEXTURE_H */

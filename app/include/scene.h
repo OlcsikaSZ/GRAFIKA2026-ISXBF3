@@ -25,26 +25,23 @@ typedef struct Entity
     float sx, sy, sz;
 
     int animated;
-
     float anim_angle_deg;
 
-    /* Local-space bounding sphere for picking */
+    // Store local bounds for object picking.
     vec3 bounds_center_local;
     float bounds_radius_local;
 
-    /* Local-space AABB for collision in the horizontal plane (XY). */
+    // Store local X/Y bounds for collision tests.
     float bounds_min_x_local;
     float bounds_max_x_local;
     float bounds_min_y_local;
     float bounds_max_y_local;
 
-    /* Local-space AABB min Z (for auto-grounding statues) */
+    // Store local Z bounds for grounding and collision.
     float bounds_min_z_local;
-
-    /* Local-space AABB max Z (for simple collision checks) */
     float bounds_max_z_local;
 
-    /* Extra world-space Z offset to place model base onto a surface (pedestal top). */
+    // Offset the model so it rests correctly on a surface.
     float ground_offset_z;
 } Entity;
 
@@ -54,41 +51,46 @@ typedef struct Scene
     int entity_count;
 
     Material material;
-
     float light_intensity;
-
     double time_sec;
-
     int animation_enabled;
 
     GLuint floor_tex;
     GLuint wall_tex;
     GLuint ceiling_tex;
 
-    /* Picking */
+    // Store the currently selected entity.
     int selected_entity;
 
-    /* Simple projected shadows */
+    // Enable or disable planar shadows.
     int shadows_enabled;
-
 } Scene;
 
+// Initialize the scene state and shared textures.
 void init_scene(Scene* scene);
+
+// Release all models and textures owned by the scene.
 void destroy_scene(Scene* scene);
 
+// Load scene entities from the CSV configuration.
 void load_museum_scene(Scene* scene, const char* scene_csv_path);
 
+// Adjust the current scene light intensity.
 void change_light(Scene* scene, float delta);
 
+// Update animations and scene time.
 void update_scene(Scene* scene, double elapsed_time);
+
+// Render the room, entities, and selection cues.
 void render_scene(const Scene* scene);
 
+// Enable or disable animated objects.
 void toggle_animation(Scene* scene);
 
-/* Toggle simple projected shadows (planar). */
+// Enable or disable planar shadows.
 void toggle_shadows(Scene* scene);
 
-/* Returns picked entity index, or -1 if none. Also sets scene->selected_entity. */
+// Pick an entity from the current mouse position.
 int pick_entity(Scene* scene, const Camera* camera,
                 int mouse_x, int mouse_y,
                 int viewport_x, int viewport_y, int viewport_w, int viewport_h);
@@ -96,10 +98,7 @@ int pick_entity(Scene* scene, const Camera* camera,
 void draw_origin(void);
 void draw_plane(int n);
 
-/**
- * Resolve simple camera collisions against scene entities (pedestals, statues, etc.).
- * This is a lightweight MVP: circle-vs-circle in X/Y with a Z overlap check.
- */
+// Push the camera out of collidable scene objects.
 void resolve_camera_collisions(const Scene* scene, Camera* camera);
 
 #endif /* SCENE_H */

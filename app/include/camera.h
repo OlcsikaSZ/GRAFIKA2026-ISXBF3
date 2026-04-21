@@ -2,12 +2,8 @@
 #define CAMERA_H
 
 #include "utils.h"
-
 #include <stdbool.h>
 
-/**
- * Camera, as a moving point with direction
- */
 typedef struct Camera
 {
     vec3 position;
@@ -20,50 +16,31 @@ typedef struct Camera
     double bob_offset;
 } Camera;
 
-/**
- * Initialize the camera to the start position.
- */
+// Set the camera to its initial position and orientation.
 void init_camera(Camera* camera);
 
-/**
- * Update the position of the camera.
- */
+// Move the camera based on its current speed values.
 void update_camera(Camera* camera, double time);
 
-/**
- * Apply the camera settings to the view transformation.
- */
+// Apply the camera transform to the current view matrix.
 void set_view(const Camera* camera);
 
-/**
- * Set the horizontal and vertical rotation of the view angle.
- */
+// Rotate the camera while clamping the vertical angle.
 void rotate_camera(Camera* camera, double horizontal, double vertical);
 
-/**
- * Set the speed of forward and backward motion.
- */
+// Set forward and backward movement speed.
 void set_camera_speed(Camera* camera, double speed);
 
-/**
- * Set the speed of left and right side steps.
- */
+// Set left and right strafe speed.
 void set_camera_side_speed(Camera* camera, double speed);
 
-/**
- * Set the speed of up and down steps.
- */
+// Set vertical movement speed.
 void set_camera_vertical_speed(Camera* camera, double speed);
 
-/**
- * Toggle walking head-bob effect.
- */
+// Enable or disable the walking bob effect.
 void toggle_walk_bob(Camera* camera);
 
-/**
- * Clamp camera position to the room bounds (walls/floor/ceiling).
- * This is used both by the movement update and by collision resolution.
- */
+// Keep the camera inside the room limits.
 void clamp_camera_to_room(Camera* camera);
 
 void show_texture_preview(void);

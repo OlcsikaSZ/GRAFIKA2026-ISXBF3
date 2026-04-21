@@ -1,5 +1,6 @@
 #include "scene_internal.h"
 
+// Build all scene entities from the CSV scene description.
 void load_museum_scene(Scene* scene, const char* scene_csv_path)
 {
 
@@ -62,7 +63,7 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
             e->bounds_max_z_local = maxz;
         }
 
-        /* Prepare auto-grounding data for statues. */
+        // Precompute the offset needed to rest statues on pedestals.
         if (strcmp(e->type, "statue") == 0) {
             e->ground_offset_z = (-e->bounds_min_z_local) * e->sz;
         } else {
@@ -74,7 +75,7 @@ void load_museum_scene(Scene* scene, const char* scene_csv_path)
         printf("Loaded entity: %s | model=%s | tex=%s\n", e->type, rows[i].model, rows[i].texture);
     }
 
-    /* Snap each statue onto the nearest pedestal. */
+    // Snap each statue onto its nearest pedestal after loading.
     for (int i = 0; i < scene->entity_count; i++) {
         Entity* e = &scene->entities[i];
         if (strcmp(e->type, "statue") != 0) continue;

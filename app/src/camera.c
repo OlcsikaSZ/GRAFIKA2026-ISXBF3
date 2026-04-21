@@ -4,6 +4,7 @@
 
 #include <math.h>
 
+// Set the default camera position, rotation, and movement state.
 void init_camera(Camera* camera)
 {
     camera->position.x = 0.0;
@@ -23,6 +24,7 @@ void init_camera(Camera* camera)
     camera->bob_offset = 0.0;
 }
 
+// Toggle first-person head bobbing for walking mode.
 void toggle_walk_bob(Camera* camera)
 {
     camera->walk_bob_enabled = !camera->walk_bob_enabled;
@@ -35,7 +37,7 @@ void toggle_walk_bob(Camera* camera)
     camera->bob_offset = 0.0;
 }
 
-/* Clamp camera to room bounds. */
+// Keep the camera inside the museum room bounds.
 void clamp_camera_to_room(Camera* camera)
 {
     const double half_w = 5.0;
@@ -58,6 +60,7 @@ void clamp_camera_to_room(Camera* camera)
     if (camera->position.z > ceil_z_max)  camera->position.z = ceil_z_max;
 }
 
+// Update the camera position from the current movement speeds.
 void update_camera(Camera* camera, double time)
 {
     double angle;
@@ -76,7 +79,7 @@ void update_camera(Camera* camera, double time)
 
     clamp_camera_to_room(camera);
 
-    /* Walking head-bob effect. */
+    // Apply a small vertical bob while the player is moving.
     if (camera->walk_bob_enabled) {
         const double move_mag = fabs(camera->speed.x) + fabs(camera->speed.y);
         if (move_mag > 0.001) {
@@ -92,6 +95,7 @@ void update_camera(Camera* camera, double time)
     }
 }
 
+// Apply the camera transform to the model-view matrix.
 void set_view(const Camera* camera)
 {
     glMatrixMode(GL_MODELVIEW);
@@ -102,6 +106,7 @@ void set_view(const Camera* camera)
     glTranslatef(-camera->position.x, -camera->position.y, (float)(-(camera->position.z + camera->bob_offset)));
 }
 
+// Rotate the camera from mouse input deltas.
 void rotate_camera(Camera* camera, double horizontal, double vertical)
 {
     camera->rotation.z += horizontal;
@@ -124,21 +129,25 @@ void rotate_camera(Camera* camera, double horizontal, double vertical)
     }
 }
 
+// Set forward and backward movement speed.
 void set_camera_speed(Camera* camera, double speed)
 {
     camera->speed.y = speed;
 }
 
+// Set left and right strafing speed.
 void set_camera_side_speed(Camera* camera, double speed)
 {
     camera->speed.x = speed;
 }
 
+// Set vertical movement speed for free-fly mode.
 void set_camera_vertical_speed(Camera* camera, double speed)
 {
     camera->speed.z = speed;
 }
 
+// Reserved hook for optional texture preview rendering.
 void show_texture_preview()
 {
     glDisable(GL_LIGHTING);

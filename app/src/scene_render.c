@@ -1,5 +1,6 @@
 #include "scene_internal.h"
 
+// Apply an entity transform before drawing its model.
 void apply_transform(const Entity* e)
 {
     glTranslatef(e->px, e->py, e->pz + e->ground_offset_z);
@@ -11,9 +12,10 @@ void apply_transform(const Entity* e)
     glScalef(e->sx, e->sy, e->sz);
 }
 
+// Draw a soft circular proxy under an exhibit shadow.
 void draw_shadow_proxy_circle(const Entity* e)
 {
-    /* Fast shadow proxy for the shadow pass. */
+    // Draw a simple proxy shape for the shadow pass.
     const int SEG = 24;
     const float r = e->bounds_radius_local;
     const float cx = e->bounds_center_local.x;
@@ -29,9 +31,10 @@ void draw_shadow_proxy_circle(const Entity* e)
     glEnd();
 }
 
+// Configure the OpenGL lights from the current scene state.
 void set_lighting_with_intensity(const Scene* scene)
 {
-    /* Configure corridor lighting from scene intensity. */
+    // Update the scene lights from the current intensity.
     const float intensity = scene->light_intensity;
     float t = intensity / 3.0f;
     if (t < 0.0f) t = 0.0f;
@@ -95,6 +98,7 @@ void set_lighting_with_intensity(const Scene* scene)
     }
 }
 
+// Upload the shared material parameters to OpenGL.
 void set_material(const Material* material)
 {
     float ambient_material_color[] = {
@@ -127,7 +131,7 @@ void set_material(const Material* material)
 
 void build_shadow_matrix(float out[16], const float plane[4], const float light[4])
 {
-    /* Build planar shadow projection matrix. */
+    // Build the matrix that projects geometry onto the floor plane.
     const float dot =
         plane[0] * light[0] +
         plane[1] * light[1] +
@@ -155,6 +159,7 @@ void build_shadow_matrix(float out[16], const float plane[4], const float light[
     out[15] = dot - light[3] * plane[3];
 }
 
+// Return whether an entity should appear in the shadow pass.
 int entity_casts_shadow(const Entity* e)
 {
     if (strcmp(e->type, "painting") == 0) return 0;
@@ -164,14 +169,16 @@ int entity_casts_shadow(const Entity* e)
     return 1;
 }
 
+// Return whether an entity must be rendered in the glass pass.
 int entity_is_transparent(const Entity* e)
 {
     return (strcmp(e->type, "case_glass") == 0);
 }
 
+// Draw an opaque entity in the main geometry pass.
 void draw_entity_opaque(const Entity* e)
 {
-    /* Restore state after transparent pass. */
+    // Restore the default state before drawing opaque geometry.
     glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
@@ -181,7 +188,7 @@ void draw_entity_opaque(const Entity* e)
     glBindTexture(GL_TEXTURE_2D, e->texture_id);
     glColor3f(1.0f, 1.0f, 1.0f);
 
-    /* Draw statues two-sided to avoid missing faces. */
+    // Draw statues double-sided to avoid missing surfaces.
     GLboolean cull_was_enabled = glIsEnabled(GL_CULL_FACE);
     if (strcmp(e->type, "statue") == 0) {
         glDisable(GL_CULL_FACE);
@@ -194,9 +201,10 @@ void draw_entity_opaque(const Entity* e)
     glPopMatrix();
 }
 
+// Draw a transparent glass entity after opaque geometry.
 void draw_entity_glass(const Entity* e)
 {
-    /* Draw transparent glass after opaque geometry. */
+    // Render glass after the opaque pass for correct blending.
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glEnable(GL_BLEND);
@@ -235,6 +243,7 @@ void draw_entity_glass(const Entity* e)
     glPopAttrib();
 }
 
+// Render projected exhibit shadows onto the museum floor.
 void render_planar_shadows(const Scene* scene)
 {
     float lamp_pos[3][4];
@@ -278,7 +287,7 @@ void render_planar_shadows(const Scene* scene)
     glPolygonOffset(-2.0f, -2.0f);
     glDepthMask(GL_FALSE);
 
-    /* Use one key light for planar shadows. */
+    // Use one key light as the planar shadow source.
 
     int key = 0;
     float best_abs_y = fabsf(lamp_pos[0][1]);
@@ -342,6 +351,7 @@ void render_planar_shadows(const Scene* scene)
     glColor4f(1, 1, 1, 1);
 }
 
+// Render the room, entities, shadows, and selection feedback.
 void render_scene(const Scene* scene)
 {
     set_material(&scene->material);
@@ -421,6 +431,7 @@ void render_scene(const Scene* scene)
 }
 
 
+// Draw a small origin marker for debugging.
 void draw_origin(void)
 {
     glBegin(GL_LINES);
@@ -440,6 +451,7 @@ void draw_origin(void)
     glEnd();
 }
 
+// Draw a simple debug plane grid.
 void draw_plane(int n)
 {
     glColor3f(1, 0, 0);
@@ -475,6 +487,7 @@ void quad_world(float x1, float y1, float z1,
     glEnd();
 }
 
+// Draw the textured floor, walls, and ceiling quads.
 void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex)
 {
     const float half_w = ROOM_W * 0.5f;
@@ -501,7 +514,7 @@ void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex
                0.0f, 0.0f, -1.0f,
                rep_w, rep_l);
 
-    /* Walls. */
+    // Draw the room walls.
     glDisable(GL_COLOR_MATERIAL);
     {
         float wall_amb[] = {0.18f, 0.18f, 0.18f, 1.0f};
@@ -545,6 +558,7 @@ void draw_room_world_quads(GLuint floor_tex, GLuint wall_tex, GLuint ceiling_tex
 
 #ifdef SHOW_DEBUG_AXES
 
+// Draw axis lines and a center marker for debugging.
 void draw_debug_axes_and_marker(void)
 {
     glDisable(GL_LIGHTING);
