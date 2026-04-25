@@ -92,7 +92,7 @@ void set_lighting_with_intensity(const Scene* scene)
             glLightf(L, GL_CONSTANT_ATTENUATION,  0.8f);
             glLightf(L, GL_LINEAR_ATTENUATION,    0.02f);
             glLightf(L, GL_QUADRATIC_ATTENUATION, 0.002f);
-} else {
+        } else {
             glDisable(L);
         }
     }
