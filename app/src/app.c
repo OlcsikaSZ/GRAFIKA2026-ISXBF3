@@ -9,6 +9,7 @@
 static void reshape(App* app, GLsizei width, GLsizei height);
 static void toggle_fullscreen(App* app);
 
+// Initialize SDL, OpenGL, the camera, and the scene.
 void init_app(App* app, int width, int height)
 {
     int error_code;
@@ -16,12 +17,14 @@ void init_app(App* app, int width, int height)
 
     app->is_running = false;
 
+    // Start all required SDL subsystems.
     error_code = SDL_Init(SDL_INIT_EVERYTHING);
     if (error_code != 0) {
         printf("[ERROR] SDL initialization error: %s\n", SDL_GetError());
         return;
     }
 
+    // Reserve stencil bits for planar shadow rendering.
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
     app->is_fullscreen = false;
@@ -30,6 +33,7 @@ void init_app(App* app, int width, int height)
     app->windowed_w = width;
     app->windowed_h = height;
 
+    // Create the main resizable OpenGL window.
     app->window = SDL_CreateWindow(
         "Virtual Gallery – Interactive Museum Room",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -40,20 +44,14 @@ void init_app(App* app, int width, int height)
         return;
     }
 
-    /*
-     * NOTE:
-     * SDL2_image is required for the assignment. However, initializing PNG
-     * support on some Windows/MinGW setups can trigger a startup error
-     * (inflateValidate / libpng16-16.dll) due to an outdated zlib/libpng pair
-     * found on PATH. Since this project uses JPEG textures, we only initialize
-     * JPG support here to avoid loading libpng at startup.
-     */
+    // Enable only the image loader formats used by the project.
     inited_loaders = IMG_Init(IMG_INIT_JPG);
     if ((inited_loaders & IMG_INIT_JPG) == 0) {
         printf("[ERROR] IMG init error: %s\n", IMG_GetError());
         return;
     }
 
+    // Create the OpenGL context for rendering.
     app->gl_context = SDL_GL_CreateContext(app->window);
     if (app->gl_context == NULL) {
         printf("[ERROR] Unable to create the OpenGL context!\n");
@@ -63,6 +61,7 @@ void init_app(App* app, int width, int height)
     init_opengl();
     reshape(app, width, height);
 
+    // Initialize the camera and load the museum content.
     init_camera(&(app->camera));
     init_scene(&(app->scene));
     load_museum_scene(&(app->scene), "assets/config/scene.csv");
@@ -72,6 +71,7 @@ void init_app(App* app, int width, int height)
     app->is_running = true;
 }
 
+// Configure the fixed-function OpenGL render state.
 void init_opengl()
 {
     glShadeModel(GL_SMOOTH);
@@ -79,6 +79,7 @@ void init_opengl()
     glEnable(GL_NORMALIZE);
     glEnable(GL_AUTO_NORMAL);
 
+    // Use a white clear color for the background.
     glClearColor(1, 1, 1, 1);
 
     glMatrixMode(GL_MODELVIEW);
@@ -88,18 +89,19 @@ void init_opengl()
 
     glClearDepth(1.0);
 
-
-
     glDisable(GL_FOG);
 
+    // Enable 2D textures with standard modulation.
     glEnable(GL_TEXTURE_2D);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 
+    // Enable the scene light sources.
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_LIGHT1);
     glEnable(GL_LIGHT2);
 
+    // Let vertex colors affect ambient and diffuse lighting.
     glEnable(GL_COLOR_MATERIAL);
     glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 }
@@ -109,12 +111,7 @@ static void reshape(App* app, GLsizei width, GLsizei height)
     int drawable_w = width;
     int drawable_h = height;
 
-    /*
-     * IMPORTANT (Windows + DPI scaling):
-     * The OpenGL drawable size can differ from the window size.
-     * If we use only SDL_GetWindowSize(), the viewport can end up smaller
-     * than the actual framebuffer -> "render in the corner" / white borders.
-     */
+    // Use the drawable size so the viewport matches the framebuffer.
     if (app && app->window) {
         SDL_GL_GetDrawableSize(app->window, &drawable_w, &drawable_h);
     }
@@ -125,6 +122,7 @@ static void reshape(App* app, GLsizei width, GLsizei height)
     glViewport(0, 0, drawable_w, drawable_h);
 
     if (app) {
+        // Store both window and viewport dimensions for picking.
         app->viewport_x = 0;
         app->viewport_y = 0;
         app->viewport_w = drawable_w;
@@ -132,9 +130,11 @@ static void reshape(App* app, GLsizei width, GLsizei height)
         app->window_w = width;
         app->window_h = height;
     }
+
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     {
+        // Slightly change the vertical frustum for walk-bob mode.
         const double human = app && app->camera.walk_bob_enabled;
         const double half_h = human ? 0.045 : 0.060;
         const double aspect = (double)drawable_w / (double)drawable_h;
@@ -143,6 +143,7 @@ static void reshape(App* app, GLsizei width, GLsizei height)
     }
 }
 
+// Translate keyboard and mouse input into app actions.
 void handle_app_events(App* app)
 {
     SDL_Event event;
@@ -158,6 +159,7 @@ void handle_app_events(App* app)
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
         case SDL_KEYDOWN:
+            // Handle one-time key press actions.
             switch (event.key.keysym.scancode) {
             case SDL_SCANCODE_F11:
                 toggle_fullscreen(app);
@@ -207,18 +209,20 @@ void handle_app_events(App* app)
                 reshape(app, app->window_w, app->window_h);
                 break;
             case SDL_SCANCODE_KP_PLUS:
-            case SDL_SCANCODE_EQUALS: /* + on main keyboard (shift+=) */
+            case SDL_SCANCODE_EQUALS: // Handle + on the main keyboard.
                 change_light(&(app->scene), 0.1f);
                 break;
             case SDL_SCANCODE_KP_MINUS:
-            case SDL_SCANCODE_MINUS:  /* - on main keyboard */
+            case SDL_SCANCODE_MINUS:  // Handle - on the main keyboard.
                 change_light(&(app->scene), -0.1f);
                 break;
             default:
                 break;
             }
             break;
+
         case SDL_KEYUP:
+            // Stop continuous movement when a movement key is released.
             switch (event.key.keysym.scancode) {
             case SDL_SCANCODE_W:
             case SDL_SCANCODE_S:
@@ -236,7 +240,9 @@ void handle_app_events(App* app)
                 break;
             }
             break;
+
         case SDL_MOUSEBUTTONDOWN:
+            // Right mouse rotates the camera, left mouse starts picking.
             if (event.button.button == SDL_BUTTON_RIGHT) {
                 is_mouse_down = true;
             }
@@ -246,14 +252,17 @@ void handle_app_events(App* app)
                 left_down_y = event.button.y;
             }
             break;
+
         case SDL_MOUSEMOTION:
             SDL_GetMouseState(&x, &y);
             if (is_mouse_down) {
+                // Rotate the camera while the right mouse button is held.
                 rotate_camera(&(app->camera), mouse_x - x, mouse_y - y);
             }
             mouse_x = x;
             mouse_y = y;
             break;
+
         case SDL_MOUSEBUTTONUP:
             if (event.button.button == SDL_BUTTON_RIGHT) {
                 is_mouse_down = false;
@@ -262,6 +271,8 @@ void handle_app_events(App* app)
                 left_down = false;
                 const int dx = abs(event.button.x - left_down_x);
                 const int dy = abs(event.button.y - left_down_y);
+
+                // Treat short left clicks as pick actions.
                 if (dx + dy <= 3) {
                     const int idx = pick_entity(
                         &app->scene, &app->camera,
@@ -269,10 +280,12 @@ void handle_app_events(App* app)
                         (int)((double)event.button.y * (double)app->viewport_h / (double)app->window_h),
                         app->viewport_x, app->viewport_y, app->viewport_w, app->viewport_h);
 
+                    // Clicking a statue toggles its rotation state.
                     if (idx >= 0 && strcmp(app->scene.entities[idx].type, "statue") == 0) {
                         toggle_animation(&(app->scene));
                     }
 
+                    // Update the window title with the selected object.
                     if (idx >= 0) {
                         char title[128];
                         snprintf(title, sizeof(title), "Virtual Gallery – Interactive Museum Room | Selected: %s (#%d)",
@@ -284,15 +297,19 @@ void handle_app_events(App* app)
                 }
             }
             break;
+
         case SDL_QUIT:
             app->is_running = false;
             break;
+
         case SDL_WINDOWEVENT:
+            // Rebuild the projection when the window size changes.
             if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
                 event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                 reshape(app, (GLsizei)event.window.data1, (GLsizei)event.window.data2);
             }
             break;
+
         default:
             break;
         }
@@ -306,6 +323,7 @@ static void toggle_fullscreen(App* app)
     }
 
     if (!app->is_fullscreen) {
+        // Save the current windowed size before switching modes.
         SDL_GetWindowPosition(app->window, &app->windowed_x, &app->windowed_y);
         SDL_GetWindowSize(app->window, &app->windowed_w, &app->windowed_h);
 
@@ -317,6 +335,7 @@ static void toggle_fullscreen(App* app)
     } else {
         if (SDL_SetWindowFullscreen(app->window, 0) == 0) {
             app->is_fullscreen = false;
+            // Restore the previous windowed position and size.
             SDL_SetWindowPosition(app->window, app->windowed_x, app->windowed_y);
             SDL_SetWindowSize(app->window, app->windowed_w, app->windowed_h);
         } else {
@@ -328,12 +347,14 @@ static void toggle_fullscreen(App* app)
         int w = 0, h = 0;
         SDL_GetWindowSize(app->window, &w, &h);
 
+        // Refresh the OpenGL projection after the mode change.
         SDL_GL_MakeCurrent(app->window, app->gl_context);
 
         reshape(app, (GLsizei)w, (GLsizei)h);
     }
 }
 
+// Advance the simulation using the elapsed frame time.
 void update_app(App* app)
 {
     double current_time;
@@ -343,17 +364,23 @@ void update_app(App* app)
     elapsed_time = current_time - app->uptime;
     app->uptime = current_time;
 
+    // Update camera motion from the current input state.
     update_camera(&(app->camera), elapsed_time);
-    /* Prevent walking through scene objects. */
+
+    // Resolve camera collisions against scene objects.
     resolve_camera_collisions(&(app->scene), &(app->camera));
+
+    // Update animated scene objects using frame time.
     update_scene(&(app->scene), elapsed_time);
 }
 
+// Render one complete frame of the application.
 void render_app(App* app)
 {
     int w = 0, h = 0;
     SDL_GetWindowSize(app->window, &w, &h);
 
+    // Clear all framebuffer attachments before drawing.
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     glMatrixMode(GL_MODELVIEW);
 
@@ -362,17 +389,19 @@ void render_app(App* app)
     render_scene(&(app->scene));
     glPopMatrix();
 
+    // Show the optional texture preview overlay.
     if (app->camera.is_preview_visible) {
         show_texture_preview();
     }
 
+    // Draw the help overlay when the user requests it.
     if (is_help_visible()) {
         int w = 0, h = 0;
         SDL_GetWindowSize(app->window, &w, &h);
         draw_help_overlay(w, h);
     }
 
-    /* Bottom-left picking info panel. */
+    // Draw the selection info panel.
     {
         int ww = 0, hh = 0;
         SDL_GetWindowSize(app->window, &ww, &hh);
@@ -387,9 +416,11 @@ void render_app(App* app)
         if (app->scene.selected_entity >= 0 && app->scene.selected_entity < app->scene.entity_count) {
             const Entity* e = &app->scene.entities[app->scene.selected_entity];
             char buf[256];
-	            snprintf(buf, sizeof(buf),
-	                     "Selected: %s (#%d)\n%s\nLMB pick | R toggle rotate (statues)",
-	                     e->display_name, app->scene.selected_entity, e->description);
+
+            // Show the selected object's metadata in the UI panel.
+            snprintf(buf, sizeof(buf),
+                     "Selected: %s (#%d)\n%s\nLMB pick | R toggle rotate (statues)",
+                     e->display_name, app->scene.selected_entity, e->description);
             draw_text_2d(ww, hh, panel_x + 10, panel_y + 10, buf);
         } else {
             draw_text_2d(ww, hh, panel_x + 10, panel_y + 10, "Click to pick\nObjects will highlight");
@@ -399,12 +430,14 @@ void render_app(App* app)
     SDL_GL_SwapWindow(app->window);
 }
 
+// Release SDL, OpenGL, and scene resources.
 void destroy_app(App* app)
 {
     if (app == NULL) {
         return;
     }
 
+    // Free scene-owned models, textures, and runtime state.
     destroy_scene(&(app->scene));
 
     if (app->gl_context != NULL) {

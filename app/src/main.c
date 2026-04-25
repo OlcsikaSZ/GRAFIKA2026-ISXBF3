@@ -2,14 +2,12 @@
 
 #include <stdio.h>
 
-/**
- * Main function
- */
+// Run the main application loop until the user exits.
 int main(int argc, char* argv[])
 {
     (void)argc;
     (void)argv;
-    
+
     App app;
 
     init_app(&app, 800, 600);

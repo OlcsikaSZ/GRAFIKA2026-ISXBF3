@@ -1,5 +1,6 @@
 #include "scene_internal.h"
 
+// Compute local-space bounds used for picking and collisions.
 void compute_model_bounds(const Model* m,
                                  vec3* out_center,
                                  float* out_radius,
@@ -48,8 +49,7 @@ void compute_model_bounds(const Model* m,
     *out_minz = minz; *out_maxz = maxz;
 }
 
-
-
+// Assign display labels and descriptions based on entity type.
 void set_entity_metadata(Entity* e, const char* model_path)
 {
     if (!e) return;
@@ -97,6 +97,7 @@ void set_entity_metadata(Entity* e, const char* model_path)
     }
 }
 
+// Find the closest pedestal for automatic statue placement.
 int find_nearest_pedestal(const Scene* scene, const Entity* statue)
 {
     int best = -1;
@@ -115,6 +116,7 @@ int find_nearest_pedestal(const Scene* scene, const Entity* statue)
     return best;
 }
 
+// Initialize scene defaults, materials, and room textures.
 void init_scene(Scene* scene)
 {
     memset(scene, 0, sizeof(*scene));
@@ -144,18 +146,21 @@ void init_scene(Scene* scene)
     scene->ceiling_tex = load_texture("assets/textures/ceiling.jpg");
 }
 
+// Toggle planar shadow rendering on or off.
 void toggle_shadows(Scene* scene)
 {
     scene->shadows_enabled = !scene->shadows_enabled;
     printf("Shadows: %s\n", scene->shadows_enabled ? "ON" : "OFF");
 }
 
+// Toggle the animated exhibit rotation state.
 void toggle_animation(Scene* scene)
 {
     scene->animation_enabled = !scene->animation_enabled;
     printf("Animation: %s\n", scene->animation_enabled ? "ON" : "OFF");
 }
 
+// Free loaded models and textures owned by the scene.
 void destroy_scene(Scene* scene)
 {
     if (scene == NULL) {
@@ -190,6 +195,7 @@ void destroy_scene(Scene* scene)
     scene->selected_entity = -1;
 }
 
+// Adjust the global scene light intensity.
 void change_light(Scene* scene, float delta)
 {
     scene->light_intensity += delta;
@@ -199,6 +205,7 @@ void change_light(Scene* scene, float delta)
     printf("Light intensity: %.2f\n", scene->light_intensity);
 }
 
+// Update per-frame scene animation state.
 void update_scene(Scene* scene, double elapsed_time)
 {
     scene->time_sec += elapsed_time;

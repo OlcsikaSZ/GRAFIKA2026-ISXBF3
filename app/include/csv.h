@@ -12,6 +12,7 @@ typedef struct {
     float sx, sy, sz;
 } SceneRow;
 
+// Load scene rows from a CSV file.
 int load_scene_csv(const char* path, SceneRow* out_rows, size_t max_rows, size_t* out_count);
 
 #endif

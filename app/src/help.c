@@ -7,6 +7,7 @@
 static int g_show_help = 0;
 static GLuint g_help_tex = 0;
 
+// Toggle the help screen visibility and console summary.
 void toggle_help(void) {
     g_show_help = !g_show_help;
     if (g_show_help) {
@@ -27,10 +28,12 @@ void toggle_help(void) {
 }
 
 
+// Return whether the help overlay is currently visible.
 int is_help_visible(void) {
     return g_show_help;
 }
 
+// Draw the centered help texture over the 3D scene.
 void draw_help_overlay(int w, int h) {
     if (!g_show_help) return;
 
@@ -38,7 +41,7 @@ void draw_help_overlay(int w, int h) {
         g_help_tex = load_texture("assets/textures/help.jpg");
     }
 
-    /* Draw centered 2D help overlay. */
+    // Draw the overlay in screen space.
     glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_TRANSFORM_BIT);
 
     glDisable(GL_LIGHTING);

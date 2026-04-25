@@ -1,5 +1,6 @@
 #include "scene_internal.h"
 
+// Return whether an entity should block the camera.
 int is_entity_collidable(const Entity* e)
 {
     if (e == NULL) return 0;
@@ -8,11 +9,12 @@ int is_entity_collidable(const Entity* e)
     return 1;
 }
 
+// Push the camera out of overlapping entity bounds.
 void resolve_camera_collisions(const Scene* scene, Camera* camera)
 {
     if (scene == NULL || camera == NULL) return;
 
-    /* Approximate the camera as a vertical capsule. */
+    // Approximate the player as a simple upright capsule.
     const float cam_r = 0.25f;
     const float cam_h = 1.70f;
 
@@ -31,7 +33,7 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
             continue;
         }
 
-        /* Horizontal collision: circle vs. oriented rectangle. */
+        // Resolve horizontal collision against the rotated bounds.
 
         const float local_cx = (e->bounds_min_x_local + e->bounds_max_x_local) * 0.5f;
         const float local_cy = (e->bounds_min_y_local + e->bounds_max_y_local) * 0.5f;
@@ -95,6 +97,7 @@ void resolve_camera_collisions(const Scene* scene, Camera* camera)
     clamp_camera_to_room(camera);
 }
 
+// Invert a 4x4 matrix for ray picking calculations.
 int invert_matrix_4x4(const double m[16], double inv_out[16])
 {
     double inv[16];
@@ -221,6 +224,7 @@ int invert_matrix_4x4(const double m[16], double inv_out[16])
     return 1;
 }
 
+// Multiply a 4x4 matrix by a 4D vector.
 void mult_mat4_vec4(const double m[16], const double v[4], double out[4])
 {
     out[0] = m[0]*v[0] + m[4]*v[1] + m[8]*v[2]  + m[12]*v[3];
@@ -229,6 +233,7 @@ void mult_mat4_vec4(const double m[16], const double v[4], double out[4])
     out[3] = m[3]*v[0] + m[7]*v[1] + m[11]*v[2] + m[15]*v[3];
 }
 
+// Multiply two 4x4 matrices in column-major order.
 void mult_mat4_mat4(const double a[16], const double b[16], double out[16])
 {
     for (int col = 0; col < 4; col++) {
@@ -242,6 +247,7 @@ void mult_mat4_mat4(const double a[16], const double b[16], double out[16])
     }
 }
 
+// Subtract one 3D vector from another.
 void vec3_sub(const double a[3], const double b[3], double out[3])
 {
     out[0] = a[0] - b[0];
@@ -249,12 +255,14 @@ void vec3_sub(const double a[3], const double b[3], double out[3])
     out[2] = a[2] - b[2];
 }
 
+// Normalize a 3D vector in place.
 void vec3_norm(double v[3])
 {
     const double len = sqrt(v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
     if (len > 1e-12) { v[0] /= len; v[1] /= len; v[2] /= len; }
 }
 
+// Rotate a 3D point by Euler angles in degrees.
 void rotate_point_xyz_deg(double p[3], float rx, float ry, float rz)
 {
     const double x0 = p[0], y0 = p[1], z0 = p[2];
@@ -286,6 +294,7 @@ void rotate_point_xyz_deg(double p[3], float rx, float ry, float rz)
     p[0] = x; p[1] = y; p[2] = z;
 }
 
+// Test a picking ray against a bounding sphere.
 int ray_sphere_intersect(const double ro[3], const double rd[3],
                                 const double c[3], double r,
                                 double* out_t)
@@ -305,6 +314,7 @@ int ray_sphere_intersect(const double ro[3], const double rd[3],
     return 1;
 }
 
+// Select the closest entity under the mouse cursor.
 int pick_entity(Scene* scene, const Camera* camera,
                 int mouse_x, int mouse_y,
                 int viewport_x, int viewport_y, int viewport_w, int viewport_h)

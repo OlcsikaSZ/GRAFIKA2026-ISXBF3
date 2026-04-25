@@ -4,6 +4,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 
+// Load an image file and upload it as an OpenGL texture.
 GLuint load_texture(char* filename)
 {
     SDL_Surface* loaded = IMG_Load(filename);

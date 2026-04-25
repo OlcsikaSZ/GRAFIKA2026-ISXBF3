@@ -5,7 +5,6 @@
 #include "scene.h"
 
 #include <SDL2/SDL.h>
-
 #include <stdbool.h>
 
 #define VIEWPORT_RATIO (4.0 / 3.0)
@@ -20,7 +19,7 @@ typedef struct App
     Camera camera;
     Scene scene;
 
-    /* Letterboxed viewport (for correct mouse picking) */
+    // Store the letterboxed viewport for rendering and picking.
     int viewport_x;
     int viewport_y;
     int viewport_w;
@@ -29,7 +28,7 @@ typedef struct App
     int window_w;
     int window_h;
 
-    /* Fullscreen toggle (F11 / Alt+Enter) */
+    // Store the windowed state when toggling fullscreen.
     bool is_fullscreen;
     int windowed_x;
     int windowed_y;
@@ -37,39 +36,22 @@ typedef struct App
     int windowed_h;
 } App;
 
-/**
- * Initialize the application.
- */
+// Initialize SDL, OpenGL, the camera, and the scene.
 void init_app(App* app, int width, int height);
 
-/**
- * Initialize the OpenGL context.
- */
+// Set the OpenGL state used by the application.
 void init_opengl();
 
-/*
- * Window resize handling is implemented as an internal (static) helper in
- * src/app.c. It is not part of the public app interface.
- */
-
-/**
- * Handle the events of the application.
- */
+// Process keyboard, mouse, and window events.
 void handle_app_events(App* app);
 
-/**
- * Update the application.
- */
+// Advance application state using elapsed time.
 void update_app(App* app);
 
-/**
- * Render the application.
- */
+// Render the full frame and the UI overlays.
 void render_app(App* app);
 
-/**
- * Destroy the application.
- */
+// Release all SDL, OpenGL, and scene resources.
 void destroy_app(App* app);
 
 void show_texture_preview(void);

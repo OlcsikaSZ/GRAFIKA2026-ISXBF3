@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+// Remove trailing line breaks from a CSV line.
 static void trim_newline(char* s) {
     size_t n = strlen(s);
     while (n > 0 && (s[n-1] == '\n' || s[n-1] == '\r')) {
@@ -10,6 +11,7 @@ static void trim_newline(char* s) {
     }
 }
 
+// Load scene entities from the CSV configuration file.
 int load_scene_csv(const char* path, SceneRow* out_rows, size_t max_rows, size_t* out_count) {
     FILE* f = fopen(path, "r");
     if (!f) return 0;
