@@ -1,0 +1,488 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[magyar]{babel}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\geometry{margin=2.5cm}
+
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.25}
+
+\newcommand{\placeholderfigure}[2]{%
+\begin{figure}[H]
+    \centering
+    \fbox{\parbox[c][6.2cm][c]{0.86\textwidth}{\centering
+        \textbf{#1}\\[0.35cm]
+        #2\\[0.45cm]
+        \emph{Ide illeszthető a saját screenshot.}
+    }}
+    \caption{#1}
+\end{figure}
+}
+
+\newcommand{\code}[1]{\texttt{#1}}
+
+\begin{document}
+
+\begin{titlepage}
+    \centering
+
+    {\scshape\LARGE Miskolci Egyetem \par}
+    \vspace{0.5cm}
+    {\scshape\Large Gépészmérnöki és Informatikai Kar \par}
+    \vspace{0.5cm}
+    {\scshape\large Informatikai Intézet \par}
+
+    \vspace{2.2cm}
+
+    {\Huge\bfseries Virtual Gallery -- Interactive Museum Room\par}
+    \vspace{0.45cm}
+    {\Large\bfseries 3D grafikai beadandó bemutatási jegyzőkönyve\par}
+
+    \vspace{1.6cm}
+
+    {\Large Féléves feladat\par}
+
+    \vfill
+
+    \begin{flushleft}
+        \large
+        \textbf{Szerző:} Gál Olivér István \\
+        \textbf{Neptun-kód:} ISXBF3 \\
+        \textbf{Technológia:} C, SDL2, OpenGL, SDL2\_image, OBJ modellbetöltő könyvtár
+    \end{flushleft}
+
+    \vspace{1cm}
+
+    \begin{flushright}
+        \large
+        Miskolc \\
+        2026
+    \end{flushright}
+
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\section{Bevezetés}
+
+A beadandó célja egy bejárható, interaktív, esztétikus 3D virtuális galéria elkészítése volt. A program egy múzeumszobát jelenít meg, ahol a felhasználó first-person kamerával mozoghat, külső fájlból betöltött modelleket láthat, textúrázott falak, padló és plafon között járhat, valamint különböző interaktív és vizuális funkciókat próbálhat ki.
+
+A projekt nem egy üres térben forgó modellre épül, hanem egy konkrét koncepcióra: egy virtuális múzeumteremre. Ez azért fontos, mert a grafikai elemek nem különálló technikai demók, hanem egy egységes jelenet részei. A textúrázás, a fények, az animáció, az objektumkijelölés, az árnyékok és az ütközéskezelés mind azt szolgálják, hogy a program használat közben valódi, bejárható tér érzetét adja.
+
+A dokumentáció célja kettős. Egyrészt bemutatja, hogy a program hogyan teljesíti a beadandó minimális követelményeit és milyen többletfunkciókat tartalmaz. Másrészt védési segédletként is használható: a fő fájlok, a program működése és a bemutatás javasolt menete egy helyen szerepelnek, így a védés közben nem kell minden apró kódrészletet külön megnyitni.
+
+\section{A feladat ismertetése}
+
+A feladat egy OpenGL alapú grafikus program elkészítése volt, amelyben a virtuális teret a felhasználó be tudja járni, a program külső modellfájlokat használ, a jelenet textúrázott, fényekkel megvilágított, interaktív elemekkel rendelkezik, és a használatáról futás közben is ad segítséget.
+
+A megoldás témája egy interaktív múzeumszoba. A jelenetben különböző kiállítási tárgyak, festmények, szobrok, talapzatok, lámpák és vitrin jellegű objektumok szerepelnek. A tér mérete és szerkezete szobaszerű: van padló, plafon, falak és meghatározott bejárható terület. A felhasználó WASD billentyűkkel és egérrel mozoghat, kiválaszthat objektumokat, módosíthatja a megvilágítást, kapcsolhatja az animációt, az árnyékokat, valamint a sétáló, emberi szemmagasságú mozgásmódot.
+
+A program fő célja nem csupán az volt, hogy a kötelező funkciók kipipálhatók legyenek, hanem az, hogy ezek egy összefüggő, bemutatható rendszerben jelenjenek meg. Ez védésnél különösen előnyös, mert nem egyenként kell bizonygatni a funkciókat: a felhasználó egyszerűen bejárja a galériát, és közben természetesen látszik a kamerakezelés, a modellbetöltés, a textúrázás, a fénykezelés, az interakció és a renderelési logika.
+
+\section{A megvalósítás célja és fő irányai}
+
+A megvalósítás egyik legfontosabb célja a jól strukturált projektfelépítés volt. A program nem egyetlen hosszú \code{main.c} fájlban található, hanem külön modulokra van bontva. Az alkalmazáslogika, a kamera, a jelenet betöltése, a renderelés, az interakció, a textúrázás, a CSV-kezelés és a súgó külön fájlokba kerültek.
+
+A fejlesztés fő irányai a következők voltak:
+
+\begin{itemize}
+    \item bejárható 3D tér létrehozása first-person kamerával,
+    \item külső OBJ modellek betöltése külön modellbetöltő könyvtár segítségével,
+    \item a jelenet tartalmának adatfájlból, CSV konfiguráció alapján történő kezelése,
+    \item textúrázott környezet és textúrázott objektumok megjelenítése,
+    \item állítható, több fényforrásra épülő világítás,
+    \item időalapú animáció a forgó szobrokhoz,
+    \item egérrel történő objektumkijelölés,
+    \item stencil buffer alapú outline kiemelés,
+    \item átlátszó vitrin, egyszerű árnyékvetítés és ütközéskezelés megvalósítása,
+    \item futás közbeni súgó és információs panel biztosítása.
+\end{itemize}
+
+A program így egyszerre teljesíti a kötelező grafikai elvárásokat, és több olyan többletfunkciót is tartalmaz, amelyekkel a beadandó védésénél érdemes külön foglalkozni.
+
+\section{Követelmények teljesítése}
+
+Az alábbi táblázat összefoglalja, hogy a beadandó minimális követelményei hogyan jelennek meg a programban.
+
+\begin{longtable}{p{0.27\textwidth} p{0.61\textwidth}}
+\toprule
+\textbf{Követelmény} & \textbf{Megvalósítás a programban} \\
+\midrule
+Kamerakezelés & A felhasználó WASD billentyűkkel mozoghat, jobb egérgombbal és egérmozgatással körbenézhet. Szabad mozgásban Q/E billentyűkkel függőlegesen is lehet mozogni. \\
+\midrule
+Térbeli objektumok & A jelenet több 3D objektumot tartalmaz, például szobrokat, festményeket, talapzatokat, lámpákat és vitrint. A modellek OBJ fájlból töltődnek be. \\
+\midrule
+Külső modellfájlok betöltése & Az objektumok a \code{scene.csv} fájl alapján kerülnek betöltésre, a tényleges OBJ betöltést a statikusan linkelt OBJ modellbetöltő könyvtár végzi. \\
+\midrule
+Animáció és interaktivitás & A szobrok időalapú forgó animációt kapnak, amely az R billentyűvel kapcsolható. Kattintással objektumok jelölhetők ki. \\
+\midrule
+Textúrák & A fal, padló, plafon és a modellek textúrái SDL2\_image segítségével töltődnek be, majd OpenGL textúraként jelennek meg. \\
+\midrule
+Fények állítása & A fényintenzitás a + és - billentyűkkel módosítható. A változás nem egyszerű képernyőfényerő, hanem az OpenGL fényparamétereit módosítja. \\
+\midrule
+Használati útmutató & Az F1 billentyű egy súgó overlayt jelenít meg, amely tartalmazza a program kezelését. \\
+\midrule
+Strukturált felépítés & A program külön modulokra van bontva: alkalmazás, kamera, scene core, scene loader, scene render, interaction, texture, csv, help és utils. \\
+\bottomrule
+\end{longtable}
+
+A minimális elvárások tehát nem csak névlegesen teljesülnek, hanem a program használata közben közvetlenül bemutathatók.
+
+\section{Megvalósított többletfunkciók}
+
+A projekt több olyan plusz funkciót is tartalmaz, amelyek túlmutatnak az alapkövetelményeken. Ezek közül védésnél különösen érdemes kiemelni az objektumkijelölést, a stencil outline-t, az árnyékokat, az átlátszó vitrint és az ütközéskezelést.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{p{0.30\textwidth} p{0.58\textwidth}}
+\toprule
+\textbf{Plusz funkció} & \textbf{Rövid leírás} \\
+\midrule
+Egérrel történő picking & Bal kattintással kiválasztható a jelenet egyik objektuma. A rendszer sugarat számol a kamera és az egérpozíció alapján, majd a legközelebbi metszett objektumot választja ki. \\
+Stencil buffer outline & A kijelölt objektum körül sárgás kiemelés jelenik meg. Ez stencil bufferrel történik, nem egyszerű 2D kerettel. \\
+Human mode & A B billentyűvel bekapcsolható sétáló mód, amely emberi szemmagasságot és finom járásérzetet ad. \\
+Ütközéskezelés & A kamera nem mehet át indokolatlanul a fontosabb objektumokon és a terem határain. \\
+Átlátszó vitrin & A \code{case\_glass} típusú objektum külön átlátszó renderelési passban jelenik meg. \\
+Planar shadow & Az objektumok alatt egyszerű, síkra vetített árnyék jelenik meg, amely H billentyűvel kapcsolható. \\
+Átméretezhető ablak és fullscreen & Az ablak méretezhető, F11 vagy Alt+Enter segítségével teljes képernyőre váltható. \\
+Információs panel & A kijelölt objektum neve és rövid leírása megjelenik a képernyő alsó részén. \\
+\bottomrule
+\end{tabular}
+\caption{A programban megvalósított fontosabb többletfunkciók.}
+\end{table}
+
+Ezek a funkciók együtt adják a program igazi karakterét. A beadandó így nem csak technikailag működik, hanem bemutatás közben is látványos: van mire kattintani, van mit kapcsolni, és a néző azonnal látja a különbséget.
+
+\section{A program használata}
+
+A program irányítása egyszerű és védés közben gyorsan bemutatható. A legfontosabb vezérlők a következők:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{p{0.28\textwidth} p{0.58\textwidth}}
+\toprule
+\textbf{Billentyű / egér} & \textbf{Funkció} \\
+\midrule
+W / S & Előre és hátra mozgás \\
+A / D & Oldalirányú mozgás \\
+Jobb egérgomb + egérmozgatás & Körbenézés first-person nézetben \\
+Q / E & Fel és le mozgás szabad módban \\
+B & Human mode be- vagy kikapcsolása \\
+R & Animáció be- vagy kikapcsolása \\
+H & Árnyékok be- vagy kikapcsolása \\
+Bal kattintás & Objektum kijelölése \\
++ / - & Fényintenzitás növelése vagy csökkentése \\
+F1 & Súgó overlay megjelenítése vagy elrejtése \\
+F11 / Alt+Enter & Teljes képernyős mód váltása \\
+ESC & Kilépés \\
+\bottomrule
+\end{tabular}
+\caption{A program legfontosabb kezelőbillentyűi.}
+\end{table}
+
+\placeholderfigure{A virtuális galéria fő nézete}{Javasolt screenshot: a teljes múzeumterem látszódjon, falakkal, padlóval, objektumokkal és világítással.}
+
+\placeholderfigure{F1 súgó overlay}{Javasolt screenshot: a program futása közben megnyitott súgó, ahol a vezérlés látható.}
+
+\placeholderfigure{Objektumkijelölés és outline}{Javasolt screenshot: egy kijelölt szobor vagy vitrin, körülötte a stencil alapú kiemeléssel és alul az információs panellel.}
+
+\section{A projekt felépítése}
+
+A projekt mappaszerkezete a beadandó szempontjából letisztult. Az alkalmazás fő része az \code{app} könyvtárban található. A \code{src} tartalmazza a forrásfájlokat, az \code{include} a publikus fejléceket, a \code{lib} pedig az előre lefordított OBJ modellbetöltő statikus könyvtárat.
+
+\begin{verbatim}
+app/
+  Makefile
+  src/
+    main.c
+    app.c
+    camera.c
+    scene_core.c
+    scene_loader.c
+    scene_render.c
+    scene_interaction.c
+    texture.c
+    csv.c
+    help.c
+    utils.c
+    scene_internal.h
+  include/
+    app.h
+    camera.h
+    scene.h
+    texture.h
+    csv.h
+    help.h
+    utils.h
+    obj/
+      draw.h
+      info.h
+      load.h
+      model.h
+      transform.h
+  lib/
+    libobj.a
+
+demos/
+  (órai gyakorlati feladatok)
+\end{verbatim}
+
+A \code{demos} mappa az órai gyakorlati feladatokat tartalmazza, a beadandó tényleges futtatása és bemutatása viszont az \code{app} mappából történik.
+
+\subsection{Miért jó ez a szerkezet?}
+
+A moduláris felépítés előnye, hogy a program fő részei elkülönülnek. A kamera nem keveredik a rendereléssel, a CSV beolvasás nem keveredik az ütközéskezeléssel, és a jelenet betöltése sem ugyanabban a fájlban történik, mint a stencil outline vagy az árnyékrajzolás.
+
+Ez védésnél is nagy előny: ha a tanár rákérdez egy funkcióra, gyorsan megmutatható a hozzá tartozó fájl. Például a kamerakezelés a \code{camera.c}, az egérrel történő kijelölés a \code{scene\_interaction.c}, az árnyék és a stencil outline pedig a \code{scene\_render.c} fájlban található.
+
+\section{Adatvezérelt jelenetkezelés}
+
+A jelenet tartalma nem keményen beégetett, repetitív C kódrészekből áll, hanem CSV konfiguráció alapján töltődik be. Ez tisztább és skálázhatóbb megoldás: ha új objektumot kell hozzáadni a teremhez, akkor elsősorban az adatfájlt kell módosítani, nem a programlogikát.
+
+A \code{scene.csv} formátuma:
+
+\begin{verbatim}
+type,model,texture,px,py,pz,rx,ry,rz,sx,sy,sz
+\end{verbatim}
+
+Az egyes mezők jelentése:
+
+\begin{itemize}
+    \item \code{type}: az objektum típusa, például \code{statue}, \code{painting}, \code{pedestal}, \code{lamp} vagy \code{case\_glass},
+    \item \code{model}: az OBJ modell fájl elérési útja,
+    \item \code{texture}: a textúrafájl elérési útja,
+    \item \code{px, py, pz}: pozíció a térben,
+    \item \code{rx, ry, rz}: forgatás fokban,
+    \item \code{sx, sy, sz}: skálázás.
+\end{itemize}
+
+A CSV-alapú jelenetleírás azért erős megoldás, mert a program adatai és a program működése elkülönülnek. Magyarul: nem a kódba van belekalapálva minden tárgy helye. Ez szebb, tisztább, és kevésbé fáj karbantartani.
+
+\section{A fő fájlok szerepe}
+
+\subsection{\code{main.c}}
+
+A \code{main.c} a program belépési pontja. Létrehoz egy \code{App} struktúrát, meghívja az inicializálást, majd futtatja a fő ciklust. A fő ciklus három fő lépésből áll: eseménykezelés, állapotfrissítés és renderelés. Ez a klasszikus grafikus alkalmazás felépítés: input, update, render.
+
+A védésen ezt nagyon egyszerűen lehet elmondani: a \code{main.c} nem akar okos lenni, csak összefogja a program életciklusát. Ez jó jel, mert azt mutatja, hogy a logika ki van szervezve külön modulokba.
+
+\subsection{\code{app.c} és \code{app.h}}
+
+Az \code{app.c} kezeli az alkalmazás magas szintű működését. Itt történik az SDL inicializálása, az OpenGL ablak és context létrehozása, a renderállapotok beállítása, az események feldolgozása, a fullscreen váltás, valamint a fő update és render függvények meghívása.
+
+Fontosabb feladatai:
+
+\begin{itemize}
+    \item SDL és SDL2\_image inicializálása,
+    \item OpenGL context létrehozása,
+    \item alap OpenGL állapotok beállítása,
+    \item billentyűzet- és egéresemények kezelése,
+    \item F1, R, H, B, +, -, F11 és ESC funkciók feldolgozása,
+    \item frame-idő számítása az időalapú animációhoz,
+    \item kamera és jelenet frissítése,
+    \item jelenet és overlayek kirajzolása,
+    \item erőforrások felszabadítása.
+\end{itemize}
+
+Az \code{App} struktúra tartalmazza az ablakot, az OpenGL contextet, a kamerát, a jelenetet, az időadatokat, valamint az ablak- és viewportméreteket. Ez csökkenti a globális változók szükségességét, mert az alkalmazásállapot egy helyen, áttekinthető struktúrában van.
+
+\subsection{\code{camera.c} és \code{camera.h}}
+
+A \code{camera.c} felel a first-person kamera mozgatásáért és nézeti transzformációjáért. A kamera pozíciót, forgatást, sebességet, valamint a human mode-hoz tartozó járásfázist és bob offsetet tárol.
+
+A kamera működésének lényege, hogy a mozgás időfüggő. Ez azt jelenti, hogy a kamera nem attól mozog gyorsabban vagy lassabban, hogy éppen hány FPS-sel fut a program, hanem az eltelt idő alapján frissül. Ez fontos minőségi szempont, mert a grafikai beadandóknál gyakori hiba, ha az animáció és a mozgás a kirajzolások számától függ.
+
+A \code{set\_view} függvény állítja be az OpenGL model-view mátrixot a kamera alapján. A \code{clamp\_camera\_to\_room} gondoskodik arról, hogy a kamera a terem határain belül maradjon.
+
+\subsection{\code{scene\_core.c}}
+
+A \code{scene\_core.c} a jelenet alapállapotát és időbeli változásait kezeli. Itt történik a jelenet inicializálása, a közös anyagparaméterek beállítása, a padló, fal és plafon textúráinak betöltése, valamint az animáció frissítése.
+
+Különösen fontos a \code{compute\_model\_bounds} függvény, amely a betöltött modellek csúcsai alapján meghatározza az objektum határait. Ezeket a határokat később a picking és az ütközéskezelés használja.
+
+A \code{change\_light} függvény a fényintenzitást korlátozott tartományban módosítja. Ez azért korrekt megoldás, mert nem engedi, hogy az érték értelmetlenül negatív vagy túl nagy legyen.
+
+\subsection{\code{scene\_loader.c}}
+
+A \code{scene\_loader.c} a CSV-ben leírt objektumokból építi fel a jelenetet. Beolvassa a \code{scene.csv} sorait, létrehozza az \code{Entity} példányokat, betölti az OBJ modelleket, a textúrákat, kiszámolja a bounding adatokat, majd beállítja a szükséges objektumparamétereket.
+
+A szobrok esetében a fájl automatikusan kezeli azt is, hogy bizonyos statue típusok forgathatóak legyenek, mások pedig ne. A talapzatra helyezéshez a program megkeresi a legközelebbi talapzatot, és a szobrot arra igazítja. Ez apróságnak tűnik, de védésen jól mutat: nem csak ``oda van dobva'' a modell, hanem van logika a jelenet összeállítása mögött.
+
+\subsection{\code{scene\_render.c}}
+
+A \code{scene\_render.c} a program egyik legfontosabb fájlja, mert itt történik a látvány nagy része. Ide tartozik az objektumok transzformációja, a fények beállítása, az anyagparaméterek átadása, a terem kirajzolása, az árnyékpass, az átlátszó vitrin kezelése és a stencil outline.
+
+A renderelés több logikai lépésben történik:
+
+\begin{enumerate}
+    \item anyag- és fényparaméterek beállítása,
+    \item a textúrázott terem kirajzolása,
+    \item opcionális planar shadow pass,
+    \item átlátszatlan objektumok kirajzolása,
+    \item átlátszó objektumok külön kirajzolása,
+    \item kijelölt objektum stencil bufferbe írása,
+    \item kijelölési outline megjelenítése.
+\end{enumerate}
+
+A stencil outline lényege, hogy a kijelölt objektum először stencil értéket ír, majd a program egy kissé felnagyított verziót rajzol úgy, hogy az csak ott látszódjon, ahol az eredeti objektum nincs. Ettől alakul ki a körvonalhatás. Ez látványos plusz funkció, és technikailag is jól védhető.
+
+\subsection{\code{scene\_interaction.c}}
+
+A \code{scene\_interaction.c} tartalmazza a felhasználói interakció fontosabb matematikai és logikai részeit. Ide tartozik az ütközéskezelés, a mátrixinverzió, a vektor- és mátrixműveletek, valamint az egérrel történő picking.
+
+Az objektumkijelölésnél a program a képernyőkoordinátából normalizált eszközkoordinátát számol, majd az inverz MVP mátrix segítségével visszavetíti azt világkoordinátába. Ebből egy picking ray keletkezik. A program ezt a sugarat összeveti az objektumok bounding sphere adataival, és a legközelebbi találatot választja ki.
+
+Az ütközéskezelésnél a kamera egy egyszerű hengeres vagy kapszulaszerű szereplőként viselkedik. A program a fontosabb objektumokat akadályként kezeli, így a felhasználó nem tud teljesen szabadon átsétálni rajtuk. Ez nem teljes fizikai motor, de a beadandó céljához józan, működő és bemutatható megoldás.
+
+\subsection{\code{texture.c}}
+
+A \code{texture.c} feladata a képfájlok betöltése és OpenGL textúrává alakítása. A program SDL2\_image segítségével olvassa be a képet, RGBA formátumra konvertálja, majd \code{glTexImage2D} segítségével feltölti a GPU oldalra.
+
+A textúráknál ismétlés és lineáris szűrés van beállítva, ami a falak, padló és modellek megjelenését szebbé teszi. A külön textúrafüggvény azért hasznos, mert így a betöltési logika nem ismétlődik minden fájlban.
+
+\subsection{\code{csv.c}}
+
+A \code{csv.c} egyszerű, célzott CSV beolvasót tartalmaz a scene konfigurációhoz. A fájl első sorát fejlécként kezeli, majd soronként beolvassa az objektumtípust, modellútvonalat, textúraútvonalat, pozíciót, forgatást és skálázást.
+
+Ez a modul kicsi, de fontos: ennek köszönhető, hogy a jelenet leírása adatfájlba került, nem pedig repetitív C kódba.
+
+\subsection{\code{help.c} és \code{utils.c}}
+
+A \code{help.c} az F1 súgó megjelenítését kezeli. A súgó nem csak konzolra írja ki a vezérlést, hanem képernyőn megjelenő overlayként is használható. Ez a beadandó egyik kötelező pontját teljesíti.
+
+A \code{utils.c} kisebb segédfüggvényeket tartalmaz, például fok-radián konverziót, 2D szövegkirajzolást és kitöltött képernyőpanel rajzolását. Ezek a HUD és az információs panel miatt fontosak.
+
+\section{Renderelési megoldások}
+
+A program OpenGL fixed-function pipeline-ra épül. Ez klasszikus, tanulási szempontból jól követhető megközelítés: a fények, anyagok, textúrák és transzformációk közvetlen OpenGL hívásokkal jelennek meg.
+
+\subsection{Textúrázott terem}
+
+A terem padlója, falai és plafonja nem külön modellként szerepelnek, hanem a program quadokból rajzolja ki őket. Ez egyszerű, hatékony és jól kontrollálható megoldás. A textúrák ismétléssel kerülnek a felületekre, így a terem nem egyszínű doboznak hat.
+
+\subsection{Világítás}
+
+A jelenet több fényforrást használ. A program a \code{lamp} típusú objektumok alapján keresi meg a fények pozícióját, majd ezekhez állítja be az OpenGL fényeket. A + és - billentyűk a fény intenzitását módosítják, amely az ambient, diffuse és specular komponensekre is hat.
+
+Ez fontos különbség a gyenge megoldásokhoz képest: nem a teljes képernyő fényereje változik, hanem a jelenet megvilágítási paraméterei.
+
+\placeholderfigure{Fényintenzitás változtatása}{Javasolt két screenshot: egyik alacsonyabb, másik magasabb fényintenzitással. A különbség a tárgyak és a terem megvilágításán látszódjon.}
+
+\subsection{Planar shadow}
+
+A program egyszerű síkra vetített árnyékot valósít meg. Ez nem teljes, modern shadow mapping, hanem klasszikus planar shadow technika: a program egy árnyékmátrix segítségével a padló síkjára vetíti az objektumok geometriáját, majd sötét, áttetsző alakzatként rajzolja ki.
+
+A nagyobb modelleknél a program proxy árnyékot is használhat, hogy ne kelljen túl részletes geometriát árnyékként kirajzolni. Ez praktikus kompromisszum: a látvány megvan, a teljesítmény pedig nem szenved feleslegesen.
+
+\subsection{Átlátszó vitrin}
+
+Az átlátszó objektumok külön renderelési lépésben jelennek meg. A \code{case\_glass} típusú objektum blendeléssel, kikapcsolt textúrázással, részben áttetsző anyagparaméterekkel rajzolódik ki. Az átlátszó objektumok külön kezelése azért fontos, mert a blending érzékeny a rajzolási sorrendre és a depth buffer használatára.
+
+\placeholderfigure{Átlátszó vitrin és árnyékok}{Javasolt screenshot: a vitrin üvege, a benne lévő tárgy és a padlón látható árnyékszerű hatás.}
+
+\section{Interakció és objektumkijelölés}
+
+Az interakció egyik legerősebb része az egérrel történő objektumkijelölés. A felhasználó bal kattintással kiválaszthat egy kiállítási tárgyat. A kiválasztott objektum körül outline jelenik meg, az alsó információs panel pedig kiírja az objektum nevét és rövid leírását.
+
+A picking működése röviden:
+
+\begin{enumerate}
+    \item a program megkapja az egér képernyőkoordinátáját,
+    \item ezt átalakítja normalizált koordinátává,
+    \item lekéri a projection és model-view mátrixokat,
+    \item kiszámolja az inverz MVP mátrixot,
+    \item világkoordinátában létrehoz egy sugarat,
+    \item a sugarat metszi az objektumok bounding sphere adataival,
+    \item a legközelebbi találat lesz a kijelölt objektum.
+\end{enumerate}
+
+Ez jó kompromisszum pontosság és egyszerűség között. Nem háromszögszintű picking történik, de a felhasználói élményhez bőven elegendő, és a védésen világosan elmagyarázható.
+
+\section{Kamera és ütközéskezelés}
+
+A kamera first-person jellegű. A mozgás a kamera aktuális szögéhez igazodik, tehát előre mozgásnál nem fix világtengely mentén halad a felhasználó, hanem abba az irányba, amerre néz. Ez sokkal természetesebb bejárást eredményez.
+
+A \code{Human mode} egy külön mozgásmód, amely emberi szemmagasságra állítja a kamerát, letiltja a szabad függőleges repülést, és finom fejmozgás-szerű bob effektet ad a mozgáshoz. Ez apró, de látványos extra, mert a program kevésbé technikai demónak, inkább bejárható térnek érződik.
+
+Az ütközéskezelés két szinten működik:
+
+\begin{itemize}
+    \item a kamera nem hagyhatja el a terem határait,
+    \item a kamera nem mehet át a fontosabb, collidable objektumokon.
+\end{itemize}
+
+A megoldás nem próbál teljes fizikai szimuláció lenni, de a beadandóhoz teljesen korrekt: a cél az, hogy a felhasználó ne sétáljon át indokolatlanul a kiállítási tárgyakon.
+
+\section{Fordítás és futtatás}
+
+A projekt a \code{make} paranccsal fordítható az \code{app} könyvtárból. A Windowsos, MinGW alapú kurzuskörnyezethez a Makefile a következő fő beállításokat használja:
+
+\begin{itemize}
+    \item fordító: \code{gcc},
+    \item figyelmeztetések: \code{-Wall -Wextra -Wpedantic},
+    \item include útvonal: \code{-Iinclude},
+    \item statikus OBJ könyvtár: \code{-Llib -lobj},
+    \item SDL2, SDL2\_image és OpenGL linkelése.
+\end{itemize}
+
+Fordítás:
+
+\begin{verbatim}
+cd app
+make
+\end{verbatim}
+
+Futtatás:
+
+\begin{verbatim}
+./museum.exe
+\end{verbatim}
+
+Takarítás:
+
+\begin{verbatim}
+make clean
+\end{verbatim}
+
+A programhoz tartozó asset fájlok külön csomagként kezelhetők. A README alapján az \code{assets} mappát az \code{app/} könyvtárba kell helyezni, az elvárt struktúra pedig:
+
+\begin{verbatim}
+app/
+  assets/
+    config/
+    models/
+    textures/
+\end{verbatim}
+
+Ez megfelel annak az elvárásnak, hogy a nagyobb asset állományok ne feltétlenül a repository részeként legyenek feltöltve, hanem külön linkről legyenek elérhetők.
+
+\section{Értékelés és összegzés}
+
+A beadandó egy jól körülhatárolt témára épülő, működő grafikai alkalmazás. A virtuális galéria koncepciója alkalmas arra, hogy a kötelező elemek természetesen jelenjenek meg benne: a kamera bejárja a teret, az objektumok valódi kiállítási tárgyakként szerepelnek, a textúrázás a terem hangulatát adja, a fények és árnyékok a térbeliséget erősítik, az interakció pedig használhatóbbá teszi a programot.
+
+A projekt erősségei:
+
+\begin{itemize}
+    \item konkrét, védhető koncepcióra épül,
+    \item több kötelező és plusz grafikai funkciót tartalmaz,
+    \item a modellek és a jelenet adatai külső fájlokból érkeznek,
+    \item a kód több modulra van bontva,
+    \item a fő funkciók védés közben látványosan bemutathatók,
+    \item a program nem csak technikai minimumot teljesít, hanem felhasználói élményt is ad.
+\end{itemize}
+
+Összességében a Virtual Gallery beadandó alkalmas arra, hogy bemutassa a grafikus programozás alapvető eszközeit: transzformációkat, textúrázást, fényeket, modelltöltést, interaktív kamerát, eseménykezelést és egyszerűbb renderelési effekteket. A plusz funkciók miatt a projekt nem minimumszagú, hanem rendesen összerakott. Védésen a legerősebb stratégia az, ha először a működő jelenetet mutatjuk meg, majd csak utána bontjuk ki a kódot modulonként.
+
+\end{document}
